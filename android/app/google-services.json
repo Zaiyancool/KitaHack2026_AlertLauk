@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "568002325053",
+    "project_id": "gitlauk-e752f",
+    "storage_bucket": "gitlauk-e752f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:568002325053:android:c5a5d0b6d733ed02b01854",
+        "android_client_info": {
+          "package_name": "com.example.flutter_application_1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCzMGuLO0bMuC5nMiWF1DQK_3hc1xePh5s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
