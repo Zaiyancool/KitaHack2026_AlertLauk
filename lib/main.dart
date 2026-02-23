@@ -22,6 +22,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_application_1/heatmap/heatmap_screen.dart';
 
 import 'sos_button/sos_button.dart';
+import 'chat_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -245,10 +246,25 @@ Expanded(
               },
               icon: const Icon(Icons.report),
               label: const Text('Report Incident'),
-      
-
-            
             ),
+
+            const SizedBox(width: 20),
+
+            // Right Chat button
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                padding: const EdgeInsets.all(15),
+                shape: const CircleBorder(),
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ChatPage()),
+                );
+              },
+              child: const Icon(Icons.chat, color: Colors.blue, size: 25),
+            )
           ],
         ),
       ],

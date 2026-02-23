@@ -29,8 +29,8 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
 
           return FlutterMap(
             options: MapOptions(
-              center: LatLng(2.927962 , 101.642178),
-              zoom: 15.5,
+              initialCenter: LatLng(2.927962 , 101.642178),
+              initialZoom: 15.5,
             ),
             children: [
               TileLayer(
@@ -55,7 +55,7 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
                     width: 30,
                     height: 30,
                     point: point,
-                    builder: (ctx) => GestureDetector(
+                    child: GestureDetector(
                       onTap: () async {
                         setState(() {
                           selectedReportId = doc.id;

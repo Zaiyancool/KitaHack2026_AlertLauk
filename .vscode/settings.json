@@ -1,4 +1,5 @@
 {
     "java.configuration.updateBuildConfiguration": "interactive",
-    "cmake.sourceDirectory": "/Users/madamzayani/Desktop/codenection/GitLauk/linux/flutter"
+    "cmake.sourceDirectory": "/Users/madamzayani/Desktop/codenection/GitLauk/linux/flutter",
+    "cmake.ignoreCMakeListsMissing": true
 }
