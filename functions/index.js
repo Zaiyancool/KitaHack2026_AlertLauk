@@ -78,6 +78,7 @@ app.post('/chat', async (req, res) => {
     }
     if (!replyText) {
       replyText = 'Sorry, I could not generate a response. Please try again.';
+    }
 
     cache.set(cacheKey, replyText);
     return res.json({ reply: replyText, cached: false });
@@ -87,9 +88,70 @@ app.post('/chat', async (req, res) => {
   }
 });
 
+// (vision analyze removed — using on-device ML Kit instead)
+
 const PORT = process.env.PORT || 8080;
 if (require.main === module) {
   app.listen(PORT, () => console.log(`AI proxy listening on ${PORT}`));
 }
 
 module.exports = app;
+
+// Initialize Firebase Admin for Firestore updates (used by vision analyze)
+const admin = require('firebase-admin');
+try {
+  admin.initializeApp();
+} catch (e) {
+  console.warn('Firebase admin already initialized');
+}
+
+// POST /vision-analyze { imageUrl, reportId }
+app.post('/vision-analyze', async (req, res) => {
+  try {
+    const { imageUrl, reportId } = req.body || {};
+    if (!imageUrl || !reportId) return res.status(400).json({ error: 'imageUrl and reportId required' });
+
+    const VISION_API_KEY = process.env.VISION_API_KEY;
+    if (!VISION_API_KEY) return res.status(500).json({ error: 'VISION_API_KEY not configured' });
+
+    const visionPayload = {
+      requests: [
+        {
+          image: { source: { imageUri: imageUrl } },
+          features: [
+            { type: 'LABEL_DETECTION', maxResults: 10 },
+            { type: 'OBJECT_LOCALIZATION', maxResults: 10 },
+            { type: 'SAFE_SEARCH_DETECTION', maxResults: 10 }
+          ]
+        }
+      ]
+    };
+
+    const visionResp = await axios.post(`https://vision.googleapis.com/v1/images:annotate?key=${VISION_API_KEY}`, visionPayload, { headers: { 'Content-Type': 'application/json' }, timeout: 20000 });
+    const annotations = ((visionResp.data || {}).responses || [])[0] || {};
+
+    const labels = (annotations.labelAnnotations || []).map(l => ({ description: l.description, score: l.score }));
+    const objects = (annotations.localizedObjectAnnotations || []).map(o => ({ name: o.name, score: o.score }));
+    const safeSearch = annotations.safeSearchAnnotation || {};
+
+    // Update Firestore report document (match by custom ID field 'ID')
+    const db = admin.firestore();
+    const reportsRef = db.collection('reports');
+    const snapshot = await reportsRef.where('ID', '==', reportId).limit(1).get();
+    if (!snapshot.empty) {
+      const docRef = snapshot.docs[0].ref;
+      await docRef.update({
+        ImageLabels: labels,
+        ImageObjects: objects,
+        SafeSearch: safeSearch,
+        ImageURL: imageUrl,
+        ImageAnalyzedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    return res.json({ success: true, labels, objects, safeSearch });
+  } catch (err) {
+    console.error('vision analyze error', err?.toString(), err?.response?.data);
+    return res.status(500).json({ error: 'vision_error', detail: err?.toString() });
+  }
+});

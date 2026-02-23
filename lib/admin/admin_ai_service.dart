@@ -102,6 +102,7 @@ class AdminAIService {
             'lng': geoPoint.longitude,
             'type': doc['Type'],
             'status': doc['Status'],
+            'imageLabels': doc['ImageLabels'] ?? [],
           });
         }
       }
@@ -123,6 +124,8 @@ class AdminAIService {
           'details': doc['Details'],
           'time': doc['Time']?.toDate().toString() ?? 'Unknown',
           'location': doc['Location'] ?? 'Unknown',
+          'imageLabels': doc['ImageLabels'] ?? [],
+          'imageURL': doc['ImageURL'] ?? null,
         }).toList(),
         'success': true,
       };
