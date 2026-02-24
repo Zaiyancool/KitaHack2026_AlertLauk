@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
@@ -26,9 +27,9 @@ class GeminiService {
       throw Exception('GEMINI_API_KEY not found in .env file');
     }
 
-    // Initialize the model - using gemini-1.5-flash for faster responses
+    // Initialize the model - using gemini-2.5-flash for best multimodal results
     _model = GenerativeModel(
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.5-flash',
       apiKey: apiKey,
     );
   }
@@ -44,15 +45,24 @@ class GeminiService {
     }
   }
 
-  /// Send a message with image for multimodal AI (analyze images)
+  /// Send a message with image File for multimodal AI (mobile)
   Future<String> sendMessageWithImage(String message, File imageFile) async {
     try {
       final imageBytes = await imageFile.readAsBytes();
+      return await sendMessageWithImageBytes(message, imageBytes);
+    } catch (e) {
+      return 'Error: ${e.toString()}';
+    }
+  }
+
+  /// Send a message with image bytes for multimodal AI (works on web + mobile)
+  Future<String> sendMessageWithImageBytes(String message, Uint8List imageBytes) async {
+    try {
       final imagePart = DataPart('image/jpeg', imageBytes);
+      final textPart = TextPart(message);
       
       final content = [
-        Content.text(message),
-        Content.multi([imagePart])
+        Content.multi([textPart, imagePart])
       ];
       
       final response = await _model.generateContent(content);
@@ -61,12 +71,4 @@ class GeminiService {
       return 'Error: ${e.toString()}';
     }
   }
-}
-
-/// Helper class for chat messages
-class ChatMessage {
-  final String message;
-  final bool isUser; // true if user sent it, false if AI
-
-  ChatMessage({required this.message, required this.isUser});
 }

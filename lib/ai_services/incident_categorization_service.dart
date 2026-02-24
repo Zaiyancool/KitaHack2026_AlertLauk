@@ -54,6 +54,7 @@ class IncidentCategorizationService {
     
     // Initialize ML Kit Object Detector
     final objectDetectorOptions = ObjectDetectorOptions(
+      mode: DetectionMode.single,
       classifyObjects: true,
       multipleObjects: false,
     );
