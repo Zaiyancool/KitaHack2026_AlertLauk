@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'admin_chat_page.dart';
+import 'admin_dashboard.dart';
 
 class AdminHomePage extends StatefulWidget {
   const AdminHomePage({super.key});
@@ -101,6 +102,16 @@ class _AdminHomePageState extends State<AdminHomePage> {
       appBar: AppBar(
         title: const Text("Admin Reports"),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.dashboard),
+            tooltip: "AI Dashboard",
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const AdminDashboard()),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.analytics),
             tooltip: "AI Assistant",

@@ -23,6 +23,7 @@ import 'package:flutter_application_1/heatmap/heatmap_screen.dart';
 
 import 'sos_button/sos_button.dart';
 import 'chat_page.dart';
+import 'notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,6 +34,10 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  
+  // Initialize FCM notifications
+  await NotificationService().initialize();
+  
   runApp(CampusSafetyApp());
 }
 

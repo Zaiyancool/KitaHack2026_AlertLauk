@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
-//import 'dart:js' as js;
 import '../comp_manager/FetchMng/FetchLocation.dart';
 import '../comp_manager/WriteMng/TypeReportCounter.dart';
+import '../notification_helper.dart';
 
 class SOSButton extends StatefulWidget {
   const SOSButton({super.key});
@@ -88,6 +88,13 @@ class _SOSButtonState extends State<SOSButton> {
         "UserID": user.uid,
       });
 
+      // Send SOS push notification to all admins
+      await NotificationHelper().sendSOSAlert(
+        userName: username,
+        location: "Current Location",
+        reportId: reportId,
+      );
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('SOS sent successfully!')),
       );
@@ -105,65 +112,65 @@ class _SOSButtonState extends State<SOSButton> {
   }
 
   Future<void> _makeCall(String number) async {
-  final telUrl = 'tel:$number';
+    final telUrl = 'tel:$number';
 
-  try {
-    final uri = Uri.parse(telUrl);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
+    try {
+      final uri = Uri.parse(telUrl);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not launch phone app.')),
+        );
+      }
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not launch phone app.')),
+        SnackBar(content: Text('Error calling: $e')),
       );
     }
-  } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Error calling: $e')),
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: isSending ? null : _sendSOS,
+      child: Container(
+        width: 170,
+        height: 170,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: const LinearGradient(
+            colors: [Colors.redAccent, Colors.red],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.redAccent.withOpacity(0.6),
+              blurRadius: 20,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        alignment: Alignment.center,
+        child: isSending
+            ? const CircularProgressIndicator(color: Colors.white)
+            : const Text(
+                'SOS',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  shadows: [
+                    Shadow(
+                      offset: Offset(0, 0),
+                      blurRadius: 6,
+                      color: Colors.redAccent,
+                    ),
+                  ],
+                ),
+              ),
+      ),
     );
   }
-}
-
-@override
-Widget build(BuildContext context) {
-  return GestureDetector(
-    onTap: isSending ? null : _sendSOS,
-    child: Container(
-      width: 170,
-      height: 170,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: const LinearGradient(
-          colors: [Colors.redAccent, Colors.red],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.redAccent.withOpacity(0.6),
-            blurRadius: 20,
-            spreadRadius: 1,
-          ),
-        ],
-      ),
-      alignment: Alignment.center,
-      child: isSending
-          ? const CircularProgressIndicator(color: Colors.white)
-          : const Text(
-              'SOS',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-                shadows: [
-                  Shadow(
-                    offset: Offset(0, 0),
-                    blurRadius: 6,
-                    color: Colors.redAccent,
-                  ),
-                ],
-              ),
-            ),
-    ),
-  );
-}
 }

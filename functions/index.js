@@ -88,22 +88,165 @@ app.post('/chat', async (req, res) => {
   }
 });
 
-// (vision analyze removed — using on-device ML Kit instead)
+// ================== FIREBASE CLOUD MESSAGING NOTIFICATIONS ==================
 
-const PORT = process.env.PORT || 8080;
-if (require.main === module) {
-  app.listen(PORT, () => console.log(`AI proxy listening on ${PORT}`));
-}
-
-module.exports = app;
-
-// Initialize Firebase Admin for Firestore updates (used by vision analyze)
+// Initialize Firebase Admin
 const admin = require('firebase-admin');
 try {
   admin.initializeApp();
 } catch (e) {
   console.warn('Firebase admin already initialized');
 }
+
+// Send push notification using FCM
+async function sendPushNotification(token, title, body, data = {}) {
+  const message = {
+    notification: { title, body },
+    data,
+    token,
+    android: {
+      priority: 'high',
+      notification: { channelId: 'alert_lauk_channel', priority: 'high', sound: 'default' },
+    },
+    apns: { payload: { aps: { sound: 'default', badge: 1 } } },
+  };
+  try {
+    await admin.messaging().send(message);
+    return true;
+  } catch (error) {
+    console.error('Error sending notification:', error);
+    return false;
+  }
+}
+
+// Send to multiple tokens
+async function sendToMultipleTokens(tokens, title, body, data = {}) {
+  const messages = tokens.map(token => ({
+    notification: { title, body },
+    data,
+    token,
+    android: { priority: 'high' },
+    apns: { payload: { aps: { sound: 'default' } } },
+  }));
+  try {
+    const response = await admin.messaging().sendAll(messages);
+    console.log(`Sent ${response.successCount} notifications`);
+    return response;
+  } catch (error) {
+    console.error('Error sending bulk notifications:', error);
+    return null;
+  }
+}
+
+// POST /sendSOSNotification - Send SOS alert to all admins
+app.post('/sendSOSNotification', async (req, res) => {
+  try {
+    const { userName, location, reportId, timestamp } = req.body || {};
+    console.log('SOS Alert:', { userName, location, reportId });
+
+    const db = admin.firestore();
+    const adminsSnapshot = await db.collection('users').where('role', '==', 'admin').get();
+
+    const adminTokens = [];
+    adminsSnapshot.forEach(doc => {
+      const token = doc.data().fcmToken;
+      if (token) adminTokens.push(token);
+    });
+
+    if (adminTokens.length === 0) {
+      return res.json({ success: true, message: 'No admins to notify' });
+    }
+
+    const title = '🚨 SOS ALERT - IMMEDIATE ACTION REQUIRED';
+    const body = `User ${userName || 'Unknown'} triggered SOS at ${location || 'Unknown location'}. Report: ${reportId || 'N/A'}`;
+    const data = { type: 'sos_alert', reportId: reportId || '', userName: userName || '', location: location || '' };
+
+    await sendToMultipleTokens(adminTokens, title, body, data);
+    return res.json({ success: true, adminsNotified: adminTokens.length });
+  } catch (err) {
+    console.error('SOS notification error:', err);
+    return res.status(500).json({ error: 'sos_error', detail: err.toString() });
+  }
+});
+
+// POST /notifyAdminsOfNewReport - Notify admins of new report
+app.post('/notifyAdminsOfNewReport', async (req, res) => {
+  try {
+    const { reportId, reportType, location, userName } = req.body || {};
+    const db = admin.firestore();
+    const adminsSnapshot = await db.collection('users').where('role', '==', 'admin').get();
+
+    const adminTokens = [];
+    adminsSnapshot.forEach(doc => {
+      const token = doc.data().fcmToken;
+      if (token) adminTokens.push(token);
+    });
+
+    if (adminTokens.length === 0) {
+      return res.json({ success: true, message: 'No admins to notify' });
+    }
+
+    const title = '📋 New Incident Report';
+    const body = `${reportType}: ${userName || 'User'} at ${location || 'Unknown location'}`;
+    const data = { type: 'new_report', reportId: reportId || '', reportType: reportType || '' };
+
+    await sendToMultipleTokens(adminTokens, title, body, data);
+    return res.json({ success: true, adminsNotified: adminTokens.length });
+  } catch (err) {
+    console.error('New report notification error:', err);
+    return res.status(500).json({ error: 'new_report_error', detail: err.toString() });
+  }
+});
+
+// POST /notifyUserOfStatusUpdate - Notify user of status change
+app.post('/notifyUserOfStatusUpdate', async (req, res) => {
+  try {
+    const { userToken, reportId, newStatus, reportType, adminNote } = req.body || {};
+    if (!userToken) return res.status(400).json({ error: 'userToken required' });
+
+    const statusText = { pending: 'Pending Review', investigating: 'Being Investigated', resolved: 'Resolved', rejected: 'Rejected' }[newStatus?.toLowerCase()] || newStatus;
+
+    const title = '📱 Report Status Update';
+    const body = `Your ${reportType || 'report'} is now: ${statusText}${adminNote ? '. Note: ' + adminNote : ''}`;
+    const data = { type: 'status_update', reportId: reportId || '', newStatus: newStatus || '' };
+
+    await sendPushNotification(userToken, title, body, data);
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Status update notification error:', err);
+    return res.status(500).json({ error: 'status_error', detail: err.toString() });
+  }
+});
+
+// POST /sendEmergencyBroadcast - Emergency broadcast to all users
+app.post('/sendEmergencyBroadcast', async (req, res) => {
+  try {
+    const { title, message, adminId } = req.body || {};
+    if (!title || !message) return res.status(400).json({ error: 'title and message required' });
+
+    const db = admin.firestore();
+    const usersSnapshot = await db.collection('users').get();
+
+    const userTokens = [];
+    usersSnapshot.forEach(doc => {
+      const token = doc.data().fcmToken;
+      if (token) userTokens.push(token);
+    });
+
+    if (userTokens.length === 0) {
+      return res.json({ success: true, message: 'No users to notify' });
+    }
+
+    const broadcastTitle = `🚨 EMERGENCY: ${title}`;
+    const data = { type: 'emergency_broadcast', adminId: adminId || '' };
+
+    await sendToMultipleTokens(userTokens, broadcastTitle, message, data);
+    return res.json({ success: true, usersNotified: userTokens.length });
+  } catch (err) {
+    console.error('Emergency broadcast error:', err);
+    return res.status(500).json({ error: 'broadcast_error', detail: err.toString() });
+  }
+});
 
 // POST /vision-analyze { imageUrl, reportId }
 app.post('/vision-analyze', async (req, res) => {
@@ -115,43 +258,30 @@ app.post('/vision-analyze', async (req, res) => {
     if (!VISION_API_KEY) return res.status(500).json({ error: 'VISION_API_KEY not configured' });
 
     const visionPayload = {
-      requests: [
-        {
-          image: { source: { imageUri: imageUrl } },
-          features: [
-            { type: 'LABEL_DETECTION', maxResults: 10 },
-            { type: 'OBJECT_LOCALIZATION', maxResults: 10 },
-            { type: 'SAFE_SEARCH_DETECTION', maxResults: 10 }
-          ]
-        }
-      ]
+      requests: [{ image: { source: { imageUri: imageUrl } }, features: [{ type: 'LABEL_DETECTION', maxResults: 10 }, { type: 'OBJECT_LOCALIZATION', maxResults: 10 }] }]
     };
 
     const visionResp = await axios.post(`https://vision.googleapis.com/v1/images:annotate?key=${VISION_API_KEY}`, visionPayload, { headers: { 'Content-Type': 'application/json' }, timeout: 20000 });
     const annotations = ((visionResp.data || {}).responses || [])[0] || {};
-
     const labels = (annotations.labelAnnotations || []).map(l => ({ description: l.description, score: l.score }));
     const objects = (annotations.localizedObjectAnnotations || []).map(o => ({ name: o.name, score: o.score }));
-    const safeSearch = annotations.safeSearchAnnotation || {};
 
-    // Update Firestore report document (match by custom ID field 'ID')
     const db = admin.firestore();
-    const reportsRef = db.collection('reports');
-    const snapshot = await reportsRef.where('ID', '==', reportId).limit(1).get();
+    const snapshot = await db.collection('reports').where('ID', '==', reportId).limit(1).get();
     if (!snapshot.empty) {
-      const docRef = snapshot.docs[0].ref;
-      await docRef.update({
-        ImageLabels: labels,
-        ImageObjects: objects,
-        SafeSearch: safeSearch,
-        ImageURL: imageUrl,
-        ImageAnalyzedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+      await snapshot.docs[0].ref.update({ ImageLabels: labels, ImageObjects: objects, ImageURL: imageUrl, ImageAnalyzedAt: admin.firestore.FieldValue.serverTimestamp() });
     }
 
-    return res.json({ success: true, labels, objects, safeSearch });
+    return res.json({ success: true, labels, objects });
   } catch (err) {
-    console.error('vision analyze error', err?.toString(), err?.response?.data);
-    return res.status(500).json({ error: 'vision_error', detail: err?.toString() });
+    console.error('vision analyze error:', err);
+    return res.status(500).json({ error: 'vision_error', detail: err.toString() });
   }
 });
+
+const PORT = process.env.PORT || 8080;
+if (require.main === module) {
+  app.listen(PORT, () => console.log(`Server listening on ${PORT}`));
+}
+
+module.exports = app;

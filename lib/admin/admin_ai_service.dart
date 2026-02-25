@@ -31,6 +31,26 @@ class AdminAIService {
     );
   }
 
+  /// Helper to safely get field from document
+  dynamic _safeGetField(DocumentSnapshot doc, String field, {dynamic defaultValue}) {
+    try {
+      return doc.get(field);
+    } catch (e) {
+      return defaultValue;
+    }
+  }
+
+  /// Clean response from special characters
+  String _cleanResponse(String response) {
+    // Remove markdown symbols like **, *, ###, etc.
+    return response
+        .replaceAll(RegExp(r'#{1,6}\s*'), '')
+        .replaceAll(RegExp(r'\*{1,2}'), '')
+        .replaceAll(RegExp(r'_'), '')
+        .replaceAll(RegExp(r'`'), '')
+        .trim();
+  }
+
   /// Get comprehensive admin data for AI analysis
   Future<Map<String, dynamic>> getAdminDataContext() async {
     try {
@@ -63,7 +83,7 @@ class AdminAIService {
       // Analyze incident types
       Map<String, int> incidentTypes = {};
       for (var doc in allReports) {
-        final type = doc['Type'] ?? 'Unknown';
+        final type = _safeGetField(doc, 'Type', defaultValue: 'Unknown') ?? 'Unknown';
         incidentTypes[type] = (incidentTypes[type] ?? 0) + 1;
       }
       
@@ -72,8 +92,8 @@ class AdminAIService {
       int solvedWithTime = 0;
       for (var doc in solvedReports) {
         try {
-          final createdAt = doc['Time'];
-          final updatedAt = doc['UpdatedAt'];
+          final createdAt = _safeGetField(doc, 'Time');
+          final updatedAt = _safeGetField(doc, 'UpdatedAt');
           if (createdAt != null && updatedAt != null) {
             final created = createdAt.toDate();
             final updated = updatedAt.toDate();
@@ -82,29 +102,12 @@ class AdminAIService {
             solvedWithTime++;
           }
         } catch (e) {
-          // Skip if fields don't exist or can't be converted
           continue;
         }
       }
-      // Calculate average resolution time - handle num vs int properly
       int avgResolutionMinutes = 0;
       if (solvedWithTime > 0) {
         avgResolutionMinutes = (totalResolutionMinutes ~/ solvedWithTime);
-      }
-      
-      // Get location data for heatmap
-      List<Map<String, dynamic>> locations = [];
-      for (var doc in allReports) {
-        final geoPoint = doc['GeoPoint'] as GeoPoint?;
-        if (geoPoint != null) {
-          locations.add({
-            'lat': geoPoint.latitude,
-            'lng': geoPoint.longitude,
-            'type': doc['Type'],
-            'status': doc['Status'],
-            'imageLabels': doc['ImageLabels'] ?? [],
-          });
-        }
       }
       
       return {
@@ -116,16 +119,13 @@ class AdminAIService {
         'reportsLast24Hours': daySnapshot.docs.length,
         'incidentTypes': incidentTypes,
         'avgResolutionMinutes': avgResolutionMinutes,
-        'locations': locations,
         'recentReports': allReports.take(10).map((doc) => {
           'id': doc.id,
-          'type': doc['Type'],
-          'status': doc['Status'],
-          'details': doc['Details'],
-          'time': doc['Time']?.toDate().toString() ?? 'Unknown',
-          'location': doc['Location'] ?? 'Unknown',
-          'imageLabels': doc['ImageLabels'] ?? [],
-          'imageURL': doc['ImageURL'] ?? null,
+          'type': _safeGetField(doc, 'Type', defaultValue: 'Unknown'),
+          'status': _safeGetField(doc, 'Status', defaultValue: 'Unknown'),
+          'details': _safeGetField(doc, 'Details', defaultValue: ''),
+          'time': _safeGetField(doc, 'Time')?.toDate().toString() ?? 'Unknown',
+          'location': _safeGetField(doc, 'Location', defaultValue: 'Unknown'),
         }).toList(),
         'success': true,
       };
@@ -135,51 +135,6 @@ class AdminAIService {
         'error': e.toString(),
       };
     }
-  }
-
-  /// Build context string for AI
-  Future<String> buildAdminContext() async {
-    final data = await getAdminDataContext();
-    
-    if (!data['success']) {
-      return 'Error loading admin data: ${data['error']}';
-    }
-    
-    // Format incident types
-    final incidentTypesStr = (data['incidentTypes'] as Map<String, int>)
-        .entries
-        .map((e) => '${e.key}: ${e.value}')
-        .join(', ');
-    
-    // Calculate key metrics for concise display
-    final pendingRate = data['totalReports'] > 0 
-        ? ((data['pendingReports'] / data['totalReports']) * 100).toStringAsFixed(0)
-        : '0';
-    
-    final context = '''
-ADMIN DASHBOARD SNAPSHOT:
-
-TOTAL: ${data['totalReports']} reports | PENDING: ${data['pendingReports']} ($pendingRate%) | SOLVED: ${data['solvedReports']}
-SOS ALERTS: ${data['sosReports']} | LAST 24H: ${data['reportsLast24Hours']} | AVG RESOLUTION: ${data['avgResolutionMinutes']} min
-
-INCIDENT TYPES: $incidentTypesStr
-
-RECENT (Last 10):
-${_formatRecentReports(data['recentReports'] as List)}
-
-ACTIONS: 1.View/Edit Report 2.View Comments 3.Mark Resolved 4.Open Map
-
-RESPONSE STYLE:
-- Keep responses SHORT and IMPACTFUL (max 3-4 sentences for summaries)
-- Lead with the most important number/action
-- Use minimal formatting - plain text only
-- No markdown symbols (* # -)
-- For greetings: 1-line welcome + 1-line quick stats summary
-
-You are an AI Admin Assistant for campus safety. Be concise, actionable, and data-driven.
-''';
-    
-    return context;
   }
 
   String _formatRecentReports(List reports) {
@@ -199,7 +154,6 @@ You are an AI Admin Assistant for campus safety. Be concise, actionable, and dat
     try {
       final context = await buildAdminContext();
       
-      // Check if this is a greeting
       final isGreeting = message.toLowerCase().contains('hello') || 
                          message.toLowerCase().contains('hi') || 
                          message.toLowerCase().contains('hey') ||
@@ -216,7 +170,211 @@ ${isGreeting ? 'This is a greeting. Reply with: 1) Brief welcome (1 sentence) 2)
 
       final content = Content.text(prompt);
       final response = await _model.generateContent([content]);
-      return response.text ?? 'Sorry, I could not generate a response.';
+      return _cleanResponse(response.text ?? 'Sorry, I could not generate a response.');
+    } catch (e) {
+      return 'Error: ${e.toString()}';
+    }
+  }
+
+  /// Build context string for AI
+  Future<String> buildAdminContext() async {
+    final data = await getAdminDataContext();
+    
+    if (!data['success']) {
+      return 'Error loading admin data: ${data['error']}';
+    }
+    
+    final incidentTypesStr = (data['incidentTypes'] as Map<String, int>)
+        .entries
+        .map((e) => '${e.key}: ${e.value}')
+        .join(', ');
+    
+    final pendingRate = data['totalReports'] > 0 
+        ? ((data['pendingReports'] / data['totalReports']) * 100).toStringAsFixed(0)
+        : '0';
+    
+    final context = '''
+ADMIN DASHBOARD SNAPSHOT:
+
+TOTAL: ${data['totalReports']} reports | PENDING: ${data['pendingReports']} ($pendingRate%) | SOLVED: ${data['solvedReports']}
+SOS ALERTS: ${data['sosReports']} | LAST 24H: ${data['reportsLast24Hours']} | AVG RESOLUTION: ${data['avgResolutionMinutes']} min
+
+INCIDENT TYPES: $incidentTypesStr
+
+RECENT (Last 10):
+${_formatRecentReports(data['recentReports'] as List)}
+
+You are an AI Admin Assistant for campus safety. Be concise, actionable, and data-driven.
+''';
+    
+    return context;
+  }
+
+  /// Get quick dashboard summary for real-time display
+  Future<Map<String, dynamic>> getDashboardSummary() async {
+    try {
+      final data = await getAdminDataContext();
+      
+      if (!data['success']) {
+        return data;
+      }
+      
+      final pendingRate = data['totalReports'] > 0 
+          ? ((data['pendingReports'] / data['totalReports']) * 100).toStringAsFixed(0)
+          : '0';
+      
+      final resolutionRate = data['totalReports'] > 0 
+          ? ((data['solvedReports'] / data['totalReports']) * 100).toStringAsFixed(0)
+          : '0';
+      
+      final incidentTypes = data['incidentTypes'] as Map<String, int>;
+      final sortedTypes = incidentTypes.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      final topTypes = sortedTypes.take(3).toList();
+      
+      return {
+        'success': true,
+        'totalReports': data['totalReports'],
+        'pendingReports': data['pendingReports'],
+        'solvedReports': data['solvedReports'],
+        'sosReports': data['sosReports'],
+        'reportsLast24Hours': data['reportsLast24Hours'],
+        'reportsLast7Days': data['reportsLast7Days'],
+        'avgResolutionMinutes': data['avgResolutionMinutes'],
+        'pendingRate': pendingRate,
+        'resolutionRate': resolutionRate,
+        'topIncidentTypes': topTypes.map((e) => {'type': e.key, 'count': e.value}).toList(),
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'error': e.toString(),
+      };
+    }
+  }
+
+  /// Generate priority alerts based on current data
+  Future<String> generatePriorityAlerts() async {
+    try {
+      final data = await getAdminDataContext();
+      
+      if (!data['success']) {
+        return 'Error generating alerts: ${data['error']}';
+      }
+      
+      final reportsRef = FirebaseFirestore.instance.collection('reports');
+      final pendingSosSnapshot = await reportsRef
+          .where('Status', isEqualTo: 'Pending')
+          .where('Type', isEqualTo: 'SOS')
+          .get();
+      
+      final pendingSosCount = pendingSosSnapshot.docs.length;
+      
+      final allPendingSnapshot = await reportsRef
+          .where('Status', isEqualTo: 'Pending')
+          .get();
+      
+      final yesterday = DateTime.now().subtract(const Duration(hours: 24));
+      int oldPendingCount = 0;
+      for (var doc in allPendingSnapshot.docs) {
+        final time = _safeGetField(doc, 'Time');
+        if (time != null && time is Timestamp) {
+          if (time.toDate().isBefore(yesterday)) {
+            oldPendingCount++;
+          }
+        }
+      }
+      
+      final prompt = '''
+Generate priority ALERTS for the admin based on this data.
+
+IMPORTANT: Output in plain text only. NO markdown, NO asterisks (#, *, ##, etc), NO special characters. Just clean plain text.
+
+CRITICAL:
+- Pending SOS Alerts: $pendingSosCount
+- Pending Reports Older Than 24 Hours: $oldPendingCount
+
+OVERVIEW:
+- Total Pending: ${data['pendingReports']}
+- Total SOS: ${data['sosReports']}
+- Reports Last 24 Hours: ${data['reportsLast24Hours']}
+- Average Resolution Time: ${data['avgResolutionMinutes']} minutes
+
+Please provide concise alerts with:
+1. Priority Level (CRITICAL/HIGH/MEDIUM/NORMAL)
+2. Immediate Action Required (brief)
+3. Brief reason
+
+Use plain text only. No markdown symbols.
+''';
+
+      final content = Content.text(prompt);
+      final response = await _model.generateContent([content]);
+      return _cleanResponse(response.text ?? 'No alerts at this time.');
+    } catch (e) {
+      return 'Error: ${e.toString()}';
+    }
+  }
+
+  /// Generate AI-powered recommended actions
+  Future<String> generateRecommendedActions() async {
+    try {
+      final data = await getAdminDataContext();
+      
+      if (!data['success']) {
+        return 'Error generating recommendations: ${data['error']}';
+      }
+      
+      // Get pending reports without ordering to avoid index requirement
+      final reportsRef = FirebaseFirestore.instance.collection('reports');
+      final allReportsSnapshot = await reportsRef
+          .where('Status', isEqualTo: 'Pending')
+          .limit(20)
+          .get();
+      
+      // Sort manually by time (newest first)
+      final pendingDocs = allReportsSnapshot.docs.toList()
+        ..sort((a, b) {
+          final timeA = _safeGetField(a, 'Time');
+          final timeB = _safeGetField(b, 'Time');
+          if (timeA == null || timeB == null) return 0;
+          return timeB.compareTo(timeA);
+        });
+      
+      final recentPending = pendingDocs.take(5).toList();
+      
+      // Format pending reports safely
+      final pendingReportsStr = recentPending.isNotEmpty 
+          ? recentPending.map((r) => '- ${_safeGetField(r, 'Type', defaultValue: 'Unknown')}: ${_safeGetField(r, 'Details', defaultValue: '')}').join('\n')
+          : 'No pending reports';
+      
+      final prompt = '''
+Analyze the following data and provide 3-5 SPECIFIC actionable recommendations for the admin.
+
+IMPORTANT: Output in plain text only. NO markdown, NO asterisks (#, *, **), NO special characters. Just clean plain text.
+
+CURRENT STATS:
+- Total Reports: ${data['totalReports']}
+- Pending: ${data['pendingReports']}
+- Solved: ${data['solvedReports']}
+- SOS Alerts: ${data['sosReports']}
+- Reports Last 24 Hours: ${data['reportsLast24Hours']}
+- Reports Last 7 Days: ${data['reportsLast7Days']}
+- Average Resolution Time: ${data['avgResolutionMinutes']} minutes
+
+INCIDENT TYPES: ${(data['incidentTypes'] as Map<String, int>).entries.map((e) => '${e.key}: ${e.value}').join(', ')}
+
+PENDING REPORTS (Recent):
+$pendingReportsStr
+
+Provide recommendations that are specific, actionable, and prioritized. Keep each recommendation brief (1-2 sentences).
+
+Format as a simple numbered list with plain text only. No markdown.
+''';
+
+      final content = Content.text(prompt);
+      final response = await _model.generateContent([content]);
+      return _cleanResponse(response.text ?? 'No recommendations at this time.');
     } catch (e) {
       return 'Error: ${e.toString()}';
     }
@@ -232,7 +390,9 @@ ${isGreeting ? 'This is a greeting. Reply with: 1) Brief welcome (1 sentence) 2)
       }
       
       final prompt = '''
-Generate a detailed DAILY SUMMARY REPORT for the admin based on this data:
+Generate a detailed DAILY SUMMARY REPORT for the admin.
+
+IMPORTANT: Output in plain text only. NO markdown, NO special characters.
 
 Total Reports Today: ${data['reportsLast24Hours']}
 Total Reports This Week: ${data['reportsLast7Days']}
@@ -243,19 +403,18 @@ Average Resolution Time: ${data['avgResolutionMinutes']} minutes
 
 Incident Types: ${(data['incidentTypes'] as Map<String, int>).entries.map((e) => '${e.key}: ${e.value}').join(', ')}
 
-Recent Reports:
-${_formatRecentReports(data['recentReports'] as List)}
-
 Please provide:
 1. Executive Summary (2-3 sentences)
 2. Key Statistics
-3. Priority Alerts (if any SOS or pending)
+3. Priority Alerts
 4. Recommendations for today
+
+Use plain text only.
 ''';
 
       final content = Content.text(prompt);
       final response = await _model.generateContent([content]);
-      return response.text ?? 'Sorry, I could not generate a response.';
+      return _cleanResponse(response.text ?? 'Sorry, I could not generate a response.');
     } catch (e) {
       return 'Error: ${e.toString()}';
     }
@@ -271,7 +430,9 @@ Please provide:
       }
       
       final prompt = '''
-Generate a WEEKLY TREND ANALYSIS report:
+Generate a WEEKLY TREND ANALYSIS report.
+
+IMPORTANT: Output in plain text only. NO markdown, NO special characters.
 
 Total Reports This Week: ${data['reportsLast7Days']}
 Total Reports: ${data['totalReports']}
@@ -280,20 +441,21 @@ Solved: ${data['solvedReports']}
 SOS Alerts: ${data['sosReports']}
 Average Resolution Time: ${data['avgResolutionMinutes']} minutes
 
-Incident Types Distribution:
-${(data['incidentTypes'] as Map<String, int>).entries.map((e) => '${e.key}: ${e.value}').join(', ')}
+Incident Types: ${(data['incidentTypes'] as Map<String, int>).entries.map((e) => '${e.key}: ${e.value}').join(', ')}
 
 Please provide:
 1. Week Overview
-2. Trend Analysis (compared to previous)
+2. Trend Analysis
 3. Most Common Incidents
 4. Performance Metrics
 5. Recommendations for next week
+
+Use plain text only.
 ''';
 
       final content = Content.text(prompt);
       final response = await _model.generateContent([content]);
-      return response.text ?? 'Sorry, I could not generate a response.';
+      return _cleanResponse(response.text ?? 'Sorry, I could not generate a response.');
     } catch (e) {
       return 'Error: ${e.toString()}';
     }

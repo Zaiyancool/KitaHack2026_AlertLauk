@@ -15,6 +15,7 @@ import 'package:flutter_application_1/comp_manager/FetchMng/FetchLocation.dart';
 import 'package:flutter_application_1/comp_manager/WriteMng/TypeReportCounter.dart';
 import 'package:flutter_application_1/ai_services/incident_categorization_service.dart';
 import 'package:flutter_application_1/ai_services/gemini_service.dart';
+import 'package:flutter_application_1/ai_services/speech_to_text_service.dart';
 
 
 class ReportScreen extends StatefulWidget {
@@ -50,6 +51,12 @@ class _ReportScreenState extends State<ReportScreen> {
   String category = "Suspicious";
   final TextEditingController _customTypeCtrl = TextEditingController();
 
+  // Speech-to-Text state - DEFAULT TO MALAY for Malaysian users
+  bool _isListening = false;
+  String _speechText = '';
+  SpeechToTextService? _speechService;
+  String _selectedLanguage = 'ms_MY'; // Default to Malay (Malaysia)
+
   final TextEditingController detailsCtrl = TextEditingController();
   final TextEditingController locCtrl = TextEditingController();
   final TextEditingController locDetailsCtrl = TextEditingController();
@@ -77,6 +84,14 @@ class _ReportScreenState extends State<ReportScreen> {
   List<Map<String, dynamic>> _objectResults = [];
 
   @override
+  void initState() {
+    super.initState();
+    // Initialize speech service
+    _speechService = SpeechToTextService.getInstance();
+    _speechService?.initialize();
+  }
+
+  @override
   void dispose() {
     detailsCtrl.dispose();
     idCtrl.dispose();
@@ -84,6 +99,7 @@ class _ReportScreenState extends State<ReportScreen> {
     locDetailsCtrl.dispose();
     typeCtrl.dispose();
     _customTypeCtrl.dispose();
+    _speechService?.dispose();
     super.dispose();
   }
 
@@ -135,7 +151,7 @@ class _ReportScreenState extends State<ReportScreen> {
                   ),
                 ),
 
-                // Custom type input when "Other" is selected (or AI suggests a new type)
+                // Custom type input when "Other" is selected
                 if (category == "Other" || !_fixedCategories.contains(category)) ...[
                   const SizedBox(height: 8),
                   TextField(
@@ -163,11 +179,8 @@ class _ReportScreenState extends State<ReportScreen> {
                 // ── Description ──
                 const Text('Description', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
                 const SizedBox(height: 8),
-                TextFieldMng(
-                  controller: detailsCtrl,
-                  obscureText: false,
-                  hintText: "Describe the incident (AI will auto-fill from photo)",
-                ),
+                // Custom TextField with microphone button (WhatsApp-like voice input)
+                _buildDescriptionField(),
 
                 const SizedBox(height: 16),
 
@@ -268,6 +281,332 @@ class _ReportScreenState extends State<ReportScreen> {
     );
   }
 
+  /// Build description TextField with microphone button (WhatsApp-like voice input)
+  Widget _buildDescriptionField() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Main text field with mic button
+          TextField(
+            controller: detailsCtrl,
+            obscureText: false,
+            maxLines: 3,
+            minLines: 1,
+            decoration: InputDecoration(
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.white),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.black),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              fillColor: const Color.fromARGB(255, 234, 234, 234),
+              filled: true,
+              hintText: "Describe the incident (AI will auto-fill from photo)",
+              hintStyle: TextStyle(color: const Color.fromARGB(255, 167, 167, 167)),
+              prefixIcon: IconButton(
+                icon: Icon(
+                  _isListening ? Icons.mic : Icons.mic_none,
+                  color: _isListening ? Colors.red : Colors.grey[600],
+                ),
+                onPressed: _isListening ? _stopListening : _startListening,
+                tooltip: _isListening ? 'Tap to stop recording' : 'Tap to record voice',
+              ),
+              suffixIcon: _isListening
+                  ? _buildListeningIndicator()
+                  : (detailsCtrl.text.isNotEmpty
+                      ? IconButton(
+                          icon: Icon(Icons.clear, color: Colors.grey[600]),
+                          onPressed: () {
+                            detailsCtrl.clear();
+                            _speechText = '';
+                          },
+                          tooltip: 'Clear text',
+                        )
+                      : null),
+            ),
+            onChanged: (value) {
+              setState(() {}); // Update suffix icon
+            },
+          ),
+          
+          // Show language indicator when listening
+          if (_isListening) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.language, size: 16, color: Colors.blue.shade700),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Language: Malay (ms_MY)',
+                    style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          
+          // Show speech text preview when listening
+          if (_isListening && _speechText.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.hearing, color: Colors.red.shade400, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _speechText,
+                      style: TextStyle(
+                        color: Colors.red.shade700,
+                        fontSize: 13,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          
+          // Show discard option when there's speech text but not listening
+          if (!_isListening && _speechText.isNotEmpty && detailsCtrl.text.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                TextButton.icon(
+                  icon: const Icon(Icons.check_circle, size: 16, color: Colors.green),
+                  label: const Text('Text applied', style: TextStyle(fontSize: 12)),
+                  onPressed: () {
+                    // Text is already in the field
+                  },
+                ),
+                TextButton.icon(
+                  icon: const Icon(Icons.refresh, size: 16, color: Colors.orange),
+                  label: const Text('Discard', style: TextStyle(fontSize: 12)),
+                  onPressed: _discardSpeech,
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Animated listening indicator (WhatsApp-like)
+  Widget _buildListeningIndicator() {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.red.shade400),
+            ),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: _stopListening,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.red,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text(
+                'Tap to stop',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Start speech recognition with MALAY (ms_MY) as default for Malaysian users
+  Future<void> _startListening() async {
+    if (_speechService == null) {
+      _speechService = SpeechToTextService.getInstance();
+      await _speechService?.initialize();
+    }
+
+    if (_speechService == null || !_speechService!.isInitialized) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Speech recognition not available. Please check microphone permissions.')),
+        );
+      }
+      return;
+    }
+
+    setState(() {
+      _isListening = true;
+      _speechText = '';
+    });
+
+    // Show listening feedback
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.mic, color: Colors.white),
+              SizedBox(width: 8),
+              Text('Listening... Speak now (Bahasa Melayu)'),
+            ],
+          ),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+
+    // Use ms_MY (Malay Malaysia) for better local recognition of place names like "Taman Pinji Perdana"
+    await _speechService!.startListening(
+      localeId: 'ms_MY', // Default to Malay (Malaysia) - BEST for local Malaysian place names
+      onResult: (String text) {
+        setState(() {
+          _speechText = text;
+        });
+      },
+      onListeningStarted: () {
+        setState(() {
+          _isListening = true;
+        });
+      },
+      onListeningStopped: () {
+        setState(() {
+          _isListening = false;
+        });
+        
+        if (_speechText.isNotEmpty) {
+          setState(() {
+            if (detailsCtrl.text.trim().isNotEmpty) {
+              detailsCtrl.text = '${detailsCtrl.text.trim()} $_speechText';
+            } else {
+              detailsCtrl.text = _speechText;
+            }
+          });
+          _showSpeechResultDialog();
+        }
+      },
+      onError: (String error) {
+        setState(() {
+          _isListening = false;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Speech error: $error')),
+          );
+        }
+      },
+    );
+  }
+
+  /// Stop speech recognition
+  Future<void> _stopListening() async {
+    await _speechService?.stopListening();
+    setState(() {
+      _isListening = false;
+    });
+  }
+
+  /// Discard speech result
+  void _discardSpeech() {
+    setState(() {
+      _speechText = '';
+      detailsCtrl.clear();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Voice input discarded')),
+    );
+  }
+
+  /// Show dialog to confirm or re-record speech
+  void _showSpeechResultDialog() {
+    if (_speechText.isEmpty || !mounted) return;
+    
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.record_voice_over, color: Colors.green),
+            SizedBox(width: 8),
+            Text('Voice Input'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Recognized text:', style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                detailsCtrl.text,
+                style: const TextStyle(fontSize: 14),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+            },
+            child: const Text('Edit Text'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _discardSpeech();
+            },
+            child: const Text('Discard', style: TextStyle(color: Colors.red)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+            },
+            child: const Text('Use Text'),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Build the photo capture / preview section
   Widget _buildPhotoSection() {
     return Column(
@@ -276,7 +615,6 @@ class _ReportScreenState extends State<ReportScreen> {
         const Text('Evidence Photo', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
         const SizedBox(height: 8),
         if (_pickedImage != null) ...[
-          // Photo preview with remove button
           Stack(
             children: [
               ClipRRect(
@@ -309,7 +647,6 @@ class _ReportScreenState extends State<ReportScreen> {
                         fit: BoxFit.cover,
                       ),
               ),
-              // Remove button
               Positioned(
                 top: 8,
                 right: 8,
@@ -342,7 +679,6 @@ class _ReportScreenState extends State<ReportScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          // Re-take buttons
           Row(
             children: [
               Expanded(
@@ -363,7 +699,6 @@ class _ReportScreenState extends State<ReportScreen> {
             ],
           ),
         ] else ...[
-          // No photo yet — show pick buttons
           Container(
             height: 160,
             width: double.infinity,
@@ -542,8 +877,6 @@ class _ReportScreenState extends State<ReportScreen> {
     return UserInfo(username: '', course: '');
   }
 
-  /// Save report to Firestore with the image download URL from Storage.
-  /// This is the ONLY place a report document is created.
   Future<void> addReport({
     required String userName,
     required String userId,
@@ -580,7 +913,6 @@ class _ReportScreenState extends State<ReportScreen> {
         "UserID": userId,
       };
 
-      // Only include ML Kit results when they have data (mobile-only)
       if (imageLabels != null && imageLabels.isNotEmpty) {
         reportData["ImageLabels"] = imageLabels;
       }
@@ -611,8 +943,8 @@ class _ReportScreenState extends State<ReportScreen> {
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.pop(context); // close dialog
-              Navigator.pop(context); // go back to previous screen
+              Navigator.pop(context);
+              Navigator.pop(context);
             },
             child: const Text('OK'),
           ),
@@ -626,24 +958,19 @@ class _ReportScreenState extends State<ReportScreen> {
       final picked = await _picker.pickImage(
           source: source, maxWidth: 1280, maxHeight: 720, imageQuality: 80);
       if (picked != null) {
-        // Read bytes for web support
         final bytes = await picked.readAsBytes();
         setState(() {
           _pickedImage = picked;
           _pickedImageBytes = bytes;
-          // Reset previous analysis
           _aiSuggestion = null;
           _aiCategory = null;
           _aiConfidence = null;
           _detectedLabels = [];
         });
 
-        // Auto-fetch location immediately
         _autoFillLocation();
 
-        // Analyze the image (NO upload here — upload happens on submit)
         if (kIsWeb) {
-          // On web: skip ML Kit, use Gemini directly with bytes
           _analyzeWithGeminiOnly(bytes);
         } else {
           _analyzePickedImage(File(picked.path));
@@ -654,24 +981,18 @@ class _ReportScreenState extends State<ReportScreen> {
     }
   }
 
-  /// Upload image to Firebase Storage and return {url, path}.
-  /// Simplified and optimized for web - no stream subscription that can hang.
   Future<Map<String, String>?> _uploadImageToStorage(String reportId) async {
     if (_pickedImage == null) return null;
 
     try {
-      // Upload into the dedicated incident-images folder in the configured bucket
       final path = 'incident-images/$reportId.jpg';
       final ref = FirebaseStorage.instance.ref().child(path);
 
-      // Prepare bytes (already cached from pick)
       final bytes = _pickedImageBytes ?? await _pickedImage!.readAsBytes();
       debugPrint('Uploading image: ${bytes.length} bytes');
 
-      // Set initial progress
       setState(() => _uploadProgress = 0.1);
 
-      // Start upload task
       late UploadTask uploadTask;
       final metadata = SettableMetadata(
         contentType: 'image/jpeg',
@@ -684,7 +1005,6 @@ class _ReportScreenState extends State<ReportScreen> {
         uploadTask = ref.putFile(File(_pickedImage!.path), metadata);
       }
 
-      // Wait for upload to complete - use try with timeout
       final taskSnapshot = await uploadTask.timeout(
         const Duration(seconds: 30),
         onTimeout: () {
@@ -692,11 +1012,9 @@ class _ReportScreenState extends State<ReportScreen> {
         },
       );
 
-      // Update progress to completion
       setState(() => _uploadProgress = 1.0);
       debugPrint('Upload state: ${taskSnapshot.state}');
 
-      // Get the public download URL
       String downloadUrl;
       try {
         downloadUrl = await ref.getDownloadURL();
@@ -712,19 +1030,17 @@ class _ReportScreenState extends State<ReportScreen> {
       rethrow;
     } catch (e) {
       debugPrint('Storage upload error: $e');
-      rethrow; // Re-throw so the UI can handle the error
+      rethrow;
     }
   }
 
-  /// Auto-fill location from GPS + reverse geocoding
   Future<void> _autoFillLocation() async {
-    if (locCtrl.text.trim().isNotEmpty) return; // don't overwrite user input
+    if (locCtrl.text.trim().isNotEmpty) return;
 
     setState(() => _locationFetching = true);
     try {
       final position = await getCurrentLocation();
       if (position != null) {
-        // Reverse geocode to get address
         try {
           final placemarks = await placemarkFromCoordinates(
             position.latitude,
@@ -746,7 +1062,6 @@ class _ReportScreenState extends State<ReportScreen> {
             }
           }
         } catch (e) {
-          // Fallback to raw coords
           setState(() => locCtrl.text = '${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}');
         }
       }
@@ -756,12 +1071,10 @@ class _ReportScreenState extends State<ReportScreen> {
     setState(() => _locationFetching = false);
   }
 
-  /// Analyze picked image immediately using ML Kit + Gemini (mobile)
   Future<void> _analyzePickedImage(File imageFile) async {
     setState(() => _isAnalyzing = true);
 
     try {
-      // Step 1: On-device ML Kit analysis for labels & category
       List<String> labelStrings = [];
       List<String> objectStrings = [];
       String mlKitCategory = '';
@@ -783,7 +1096,6 @@ class _ReportScreenState extends State<ReportScreen> {
         debugPrint('ML Kit analysis error: $e');
       }
 
-      // Step 2: Use Gemini multimodal to generate description + suggest type
       await _geminiAnalyze(
         imageFile: imageFile,
         labelStrings: labelStrings,
@@ -797,7 +1109,6 @@ class _ReportScreenState extends State<ReportScreen> {
     }
   }
 
-  /// Web-only: analyze using Gemini multimodal directly (no ML Kit)
   Future<void> _analyzeWithGeminiOnly(Uint8List imageBytes) async {
     setState(() => _isAnalyzing = true);
     try {
@@ -814,7 +1125,6 @@ class _ReportScreenState extends State<ReportScreen> {
     }
   }
 
-  /// Core Gemini analysis — works for both mobile (File) and web (bytes)
   Future<void> _geminiAnalyze({
     File? imageFile,
     Uint8List? imageBytes,
@@ -847,20 +1157,19 @@ class _ReportScreenState extends State<ReportScreen> {
       if (imageFile != null) {
         aiResponse = await gemini.sendMessageWithImage(prompt, imageFile);
       } else if (imageBytes != null) {
-        // For web, use Gemini multimodal with raw bytes
         aiResponse = await gemini.sendMessageWithImageBytes(prompt, imageBytes);
       }
 
-      // Parse JSON response
       String aiDescription = '';
       String aiType = '';
       List<String> aiLabels = [];
 
       try {
-        // Strip markdown code fences if present
         String cleaned = aiResponse.trim();
-        if (cleaned.startsWith('```')) {
-          cleaned = cleaned.replaceAll(RegExp(r'^```\w*\n?'), '').replaceAll(RegExp(r'\n?```$'), '').trim();
+        int firstBrace = cleaned.indexOf('{');
+        int lastBrace = cleaned.lastIndexOf('}');
+        if (firstBrace >= 0 && lastBrace > firstBrace) {
+          cleaned = cleaned.substring(firstBrace, lastBrace + 1);
         }
         final parsed = jsonDecode(cleaned);
         aiType = parsed['type']?.toString() ?? '';
@@ -876,25 +1185,21 @@ class _ReportScreenState extends State<ReportScreen> {
         _aiSuggestion = aiDescription;
         _aiConfidence = confidence > 0 ? confidence : 0.7;
 
-        // Auto-fill incident type from Gemini
         if (aiType.isNotEmpty) {
           _aiCategory = aiType;
           if (_fixedCategories.contains(aiType)) {
             category = aiType;
           } else {
-            // Custom type from AI — set to "Other" and fill custom field
             category = "Other";
             _customTypeCtrl.text = aiType;
           }
         }
 
-        // Merge Gemini labels with ML Kit labels
         if (aiLabels.isNotEmpty) {
           final allLabels = {..._detectedLabels, ...aiLabels};
           _detectedLabels = allLabels.take(6).toList();
         }
 
-        // Auto-fill description
         if (detailsCtrl.text.trim().isEmpty && aiDescription.isNotEmpty) {
           detailsCtrl.text = aiDescription;
         }
@@ -903,7 +1208,6 @@ class _ReportScreenState extends State<ReportScreen> {
       debugPrint('Gemini analysis error: $e');
       setState(() {
         _isAnalyzing = false;
-        // Fallback: use ML Kit results if Gemini fails
         if (labelStrings.isNotEmpty) {
           _aiCategory = _suggestTypeFromLabels(labelStrings + objectStrings);
           category = _aiCategory!;
@@ -925,12 +1229,6 @@ class _ReportScreenState extends State<ReportScreen> {
     return category;
   }
 
-  /// ── SUBMIT FLOW (clean linear) ──
-  /// 1. Validate input
-  /// 2. Generate report ID
-  /// 3. Upload image to Firebase Storage → get download URL
-  /// 4. Save report + image URL to Firestore
-  /// 5. Show success
   void submitReport(String userId, String category, String details, String location) async {
     if (details.isEmpty && _pickedImage == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -946,13 +1244,11 @@ class _ReportScreenState extends State<ReportScreen> {
     });
 
     try {
-      // Resolve final type: if "Other", use custom text
       String finalType = category;
       if (category == "Other" && _customTypeCtrl.text.trim().isNotEmpty) {
         finalType = _customTypeCtrl.text.trim();
       }
 
-      // Step 1: Fetch user info + generate report ID (parallel)
       setState(() => _submitStatusText = 'Generating report ID...');
       final results = await Future.wait([
         fetchUserInfo(),
@@ -961,7 +1257,6 @@ class _ReportScreenState extends State<ReportScreen> {
       final userInfo = results[0] as UserInfo;
       final reportId = results[1] as String;
 
-      // Step 2: Upload image to Firebase Storage (if photo attached)
       String? imageUrl;
       String? imagePath;
 
@@ -974,7 +1269,6 @@ class _ReportScreenState extends State<ReportScreen> {
         }
       }
 
-      // Step 3: Save report + image URL to Firestore
       setState(() => _submitStatusText = 'Saving report...');
       await addReport(
         userName: userInfo.username,
