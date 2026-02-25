@@ -16,8 +16,6 @@ import 'package:flutter_application_1/comp_manager/ButtonMng.dart';
 import 'report_pages/report_screen.dart';
 import 'report_pages/report_list_screen.dart';
 
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_application_1/heatmap/heatmap_screen.dart';
 
@@ -65,7 +63,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   String userName = '';
-  List<LatLng> userPoints = []; // Declaration of missing userPoints
 
   @override
   void initState() {
