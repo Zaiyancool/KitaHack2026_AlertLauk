@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:async';
-import 'dart:ui';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -24,8 +24,14 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
   
   StreamSubscription<Position>? _positionStreamSubscription;
   List<dynamic> _placePredictions = [];
-  bool _isRouteSafe = true;
   bool _isJourneyStarted = false;
+  BitmapDescriptor? _personIcon;
+
+  Map? _fastestRoute;
+  Map? _safestRoute;
+  List<LatLng> _fastestPoints = [];
+  List<LatLng> _safestPoints = [];
+  bool _isShowingSafest = true;
   String _walkingDistance = "";
   String _walkingDuration = "";
 
@@ -34,10 +40,51 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
   @override
   void initState() {
     super.initState();
+    _createMarkerImage();
     _startLocationTracking();
   }
 
-  // --- 1. REAL-TIME TRACKING LOGIC ---
+  // --- 1. GENERATE CUSTOM PERSON ICON ---
+  Future<void> _createMarkerImage() async {
+    final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
+    final Canvas canvas = Canvas(pictureRecorder);
+    final double size = 30.0; 
+
+    // Background Circle
+    final Paint paint = Paint()..color = Colors.blue.shade700;
+    canvas.drawCircle(Offset(size / 2, size / 2), size / 2, paint);
+    
+    // Border
+    final Paint borderPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 5.0;
+    canvas.drawCircle(Offset(size / 2, size / 2), size / 2, borderPaint);
+
+    // Icon
+    TextPainter textPainter = TextPainter(textDirection: TextDirection.ltr);
+    textPainter.text = TextSpan(
+      text: String.fromCharCode(Icons.person_pin.codePoint),
+      style: TextStyle(
+        fontSize: size * 0.7,
+        fontFamily: Icons.person_pin.fontFamily,
+        color: Colors.white,
+      ),
+    );
+    textPainter.layout();
+    textPainter.paint(canvas, Offset((size - textPainter.width) / 2, (size - textPainter.height) / 2));
+
+    final image = await pictureRecorder.endRecording().toImage(size.toInt(), size.toInt());
+    final data = await image.toByteData(format: ui.ImageByteFormat.png);
+    
+    if (mounted) {
+      setState(() {
+        _personIcon = BitmapDescriptor.fromBytes(data!.buffer.asUint8List());
+      });
+    }
+  }
+
+  // --- 2. GPS STREAMING ---
   Future<void> _startLocationTracking() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) return;
@@ -48,57 +95,21 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
       if (permission == LocationPermission.denied) return;
     }
 
-    // This stream updates whenever you move
     _positionStreamSubscription = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 2, // Updates every 2 meters
-      ),
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 1),
     ).listen((Position position) {
       if (mounted) {
-        setState(() => _currentPosition = position);
-        
-        // If 'Start Walk' is active, the camera follows you automatically
-        if (_isJourneyStarted && _mapController != null) {
-          _mapController!.animateCamera(
-            CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)),
-          );
-        }
+        setState(() {
+          _currentPosition = position;
+          if (_isJourneyStarted && _mapController != null) {
+            _mapController!.animateCamera(CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)));
+          }
+        });
       }
     });
   }
 
-  // --- 2. AUTOCOMPLETE METHOD (RESTORED) ---
-  Future<void> _getAutocomplete(String input) async {
-    if (input.isEmpty) {
-      setState(() => _placePredictions = []);
-      return;
-    }
-    final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/place/autocomplete/json?input=$input&key=$googleMapsApiKey');
-    try {
-      final response = await http.get(url);
-      final data = json.decode(response.body);
-      if (data['status'] == 'OK') {
-        setState(() => _placePredictions = data['predictions']);
-      } else {
-        setState(() => _placePredictions = []);
-      }
-    } catch (e) {
-      debugPrint("Autocomplete error: $e");
-    }
-  }
-
-  void _recenterCamera() {
-    if (_currentPosition != null && _mapController != null) {
-      _mapController!.animateCamera(
-        CameraUpdate.newLatLngZoom(
-          LatLng(_currentPosition!.latitude, _currentPosition!.longitude), 18),
-      );
-    }
-  }
-
-  // --- 3. DIRECTIONS LOGIC ---
+  // --- 3. DIRECTIONS & SAFETY COLOR LOGIC ---
   Future<void> _getDirections(String destinationText) async {
     if (_currentPosition == null || googleMapsApiKey.isEmpty) return;
     try {
@@ -107,54 +118,67 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
       final geoData = json.decode(geoResponse.body);
       if (geoData['status'] != 'OK') return;
 
-      final destData = geoData['results'][0]['geometry']['location'];
-      LatLng destinationLatLng = LatLng(destData['lat'], destData['lng']);
+      LatLng destLatLng = LatLng(geoData['results'][0]['geometry']['location']['lat'], geoData['results'][0]['geometry']['location']['lng']);
 
-      final directionsUrl = Uri.parse('https://maps.googleapis.com/maps/api/directions/json?origin=${_currentPosition!.latitude},${_currentPosition!.longitude}&destination=${destinationLatLng.latitude},${destinationLatLng.longitude}&mode=walking&key=$googleMapsApiKey');
+      final directionsUrl = Uri.parse('https://maps.googleapis.com/maps/api/directions/json?origin=${_currentPosition!.latitude},${_currentPosition!.longitude}&destination=${destLatLng.latitude},${destLatLng.longitude}&mode=walking&alternatives=true&key=$googleMapsApiKey');
       final dirResponse = await http.get(directionsUrl);
       final dirData = json.decode(dirResponse.body);
 
       if (dirData['status'] == 'OK') {
-        final route = dirData['routes'][0]['legs'][0];
-        _walkingDistance = route['distance']['text'];
-        _walkingDuration = route['duration']['text'];
-
+        List routes = dirData['routes'];
         PolylinePoints polylinePoints = PolylinePoints();
-        List<PointLatLng> resultPoints = polylinePoints.decodePolyline(dirData['routes'][0]['overview_polyline']['points']);
-        List<LatLng> polylineCoordinates = resultPoints.map((p) => LatLng(p.latitude, p.longitude)).toList();
 
-        bool safe = true;
-        for (var circle in _circles) {
-          for (var point in polylineCoordinates) {
-            double dist = Geolocator.distanceBetween(point.latitude, point.longitude, circle.center.latitude, circle.center.longitude);
-            if (dist < circle.radius) { safe = false; break; }
+        _fastestRoute = routes[0];
+        _fastestPoints = polylinePoints.decodePolyline(_fastestRoute!['overview_polyline']['points']).map((p) => LatLng(p.latitude, p.longitude)).toList();
+        
+        _safestRoute = null;
+        for (var route in routes) {
+          List<LatLng> currentPath = polylinePoints.decodePolyline(route['overview_polyline']['points']).map((p) => LatLng(p.latitude, p.longitude)).toList();
+          if (_isPathSafe(currentPath)) {
+            _safestRoute = route;
+            _safestPoints = currentPath;
+            break; 
           }
         }
-
-        setState(() {
-          _isRouteSafe = safe;
-          _polylines.clear();
-          _polylines.add(Polyline(
-            polylineId: const PolylineId("route"),
-            color: safe ? Colors.blue.withOpacity(0.6) : Colors.red.withOpacity(0.6),
-            points: polylineCoordinates,
-            width: 5,
-          ));
-          _markers.clear();
-          _markers.add(Marker(
-            markerId: const MarkerId("destination"),
-            position: destinationLatLng,
-            icon: BitmapDescriptor.defaultMarkerWithHue(safe ? BitmapDescriptor.hueAzure : BitmapDescriptor.hueRed),
-          ));
-        });
-        _mapController?.animateCamera(CameraUpdate.newLatLngZoom(destinationLatLng, 15.5));
+        _selectRoute(_safestRoute != null);
+        _mapController?.animateCamera(CameraUpdate.newLatLngZoom(destLatLng, 15));
       }
     } catch (e) { debugPrint("Routing Error: $e"); }
   }
 
+  bool _isPathSafe(List<LatLng> points) {
+    for (var circle in _circles) {
+      for (var point in points) {
+        double dist = Geolocator.distanceBetween(point.latitude, point.longitude, circle.center.latitude, circle.center.longitude);
+        if (dist < circle.radius) return false;
+      }
+    }
+    return true;
+  }
+
+  void _selectRoute(bool useSafest) {
+    setState(() {
+      _isShowingSafest = useSafest;
+      Map activeRoute = useSafest ? (_safestRoute ?? _fastestRoute)! : _fastestRoute!;
+      List<LatLng> activePoints = useSafest ? (_safestPoints.isNotEmpty ? _safestPoints : _fastestPoints) : _fastestPoints;
+      
+      _walkingDistance = activeRoute['legs'][0]['distance']['text'];
+      _walkingDuration = activeRoute['legs'][0]['duration']['text'];
+
+      Color routeColor = useSafest ? Colors.green.withOpacity(0.8) : (_isPathSafe(_fastestPoints) ? Colors.green.withOpacity(0.8) : Colors.red.withOpacity(0.8));
+      
+      _polylines.clear();
+      _polylines.add(Polyline(polylineId: const PolylineId("route"), color: routeColor, points: activePoints, width: 6));
+    });
+  }
+
+  void _showIncidentDetails(String type, String desc) {
+    showModalBottomSheet(context: context, backgroundColor: Colors.transparent, builder: (context) => Container(padding: const EdgeInsets.all(24), decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(25))), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [Text(type, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.red)), const SizedBox(height: 10), Text(desc.isEmpty ? "No description provided." : desc, style: const TextStyle(fontSize: 16)), const SizedBox(height: 20), SizedBox(width: double.infinity, child: ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text("Close")))])));
+  }
+
   @override
   void dispose() {
-    _positionStreamSubscription?.cancel(); // STOPS GPS TRACKING
+    _positionStreamSubscription?.cancel();
     _destinationController.dispose();
     super.dispose();
   }
@@ -164,163 +188,89 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // FULL SCREEN MAP
+          // STABILIZED MAP LAYER
           Positioned.fill(
             child: _currentPosition == null
                 ? const Center(child: CircularProgressIndicator())
-                : StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance.collection('reports').snapshots(),
-                    builder: (context, snapshot) {
-                      _circles.clear();
-                      if (snapshot.hasData) {
-                        for (var doc in snapshot.data!.docs) {
-                          final data = doc.data() as Map<String, dynamic>;
-                          if (data['Status'] != 'Pending') continue;
-                          _circles.add(Circle(
-                            circleId: CircleId(doc.id),
-                            center: LatLng(data['GeoPoint'].latitude, data['GeoPoint'].longitude),
-                            radius: 80,
-                            fillColor: Colors.red.withOpacity(0.2),
-                            strokeColor: Colors.red.withOpacity(0.4),
-                            strokeWidth: 1,
-                          ));
+                : LayoutBuilder(builder: (context, constraints) {
+                    return StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance.collection('reports').snapshots(),
+                      builder: (context, snapshot) {
+                        _circles.clear();
+                        _markers.removeWhere((m) => m.markerId.value == "user_loc");
+                        _markers.add(Marker(
+                          markerId: const MarkerId("user_loc"),
+                          position: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+                          icon: _personIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
+                          anchor: const Offset(0.5, 0.5),
+                        ));
+
+                        if (snapshot.hasData) {
+                          for (var doc in snapshot.data!.docs) {
+                            final data = doc.data() as Map<String, dynamic>;
+                            if (data['Status'] != 'Pending') continue;
+                            _circles.add(Circle(circleId: CircleId(doc.id), center: LatLng(data['GeoPoint'].latitude, data['GeoPoint'].longitude), radius: 15, fillColor: Colors.red.withOpacity(0.2), strokeColor: Colors.red.withOpacity(0.4), strokeWidth: 2, consumeTapEvents: true, onTap: () => _showIncidentDetails(data['Type'] ?? "Alert", data['Description'] ?? "")));
+                          }
                         }
-                      }
-                      return GoogleMap(
-                        initialCameraPosition: CameraPosition(target: LatLng(_currentPosition!.latitude, _currentPosition!.longitude), zoom: 15),
-                        markers: _markers,
-                        polylines: _polylines,
-                        circles: _circles,
-                        myLocationEnabled: true, // THIS SHOWS THE BLUE DOT
-                        myLocationButtonEnabled: false, 
-                        onMapCreated: (controller) => _mapController = controller,
-                        padding: const EdgeInsets.only(bottom: 80),
-                      );
-                    },
-                  ),
+                        return GoogleMap(
+                          initialCameraPosition: CameraPosition(target: LatLng(_currentPosition!.latitude, _currentPosition!.longitude), zoom: 16),
+                          polylines: _polylines,
+                          circles: _circles,
+                          markers: _markers,
+                          myLocationEnabled: false, 
+                          myLocationButtonEnabled: false, 
+                          onMapCreated: (controller) => _mapController = controller,
+                          padding: const EdgeInsets.only(bottom: 120),
+                        );
+                      },
+                    );
+                  }),
           ),
 
-          // TRANSLUCENT SEARCH BAR
+          // TRANSLUCENT SEARCH
           if (!_isJourneyStarted)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 10,
-              left: 15, right: 15,
-              child: Column(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(25),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                      child: Container(
-                        color: Colors.white.withOpacity(0.7),
-                        child: TextField(
-                          controller: _destinationController,
-                          onChanged: (value) => _getAutocomplete(value),
-                          decoration: const InputDecoration(
-                            hintText: "Search USM Location...",
-                            prefixIcon: Icon(Icons.search_rounded),
-                            border: InputBorder.none,
-                            contentPadding: EdgeInsets.symmetric(vertical: 12),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (_placePredictions.isNotEmpty)
-                    Container(
-                      margin: const EdgeInsets.only(top: 5),
-                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), borderRadius: BorderRadius.circular(15)),
-                      child: ListView.builder(
-                        padding: EdgeInsets.zero, shrinkWrap: true,
-                        itemCount: _placePredictions.length,
-                        itemBuilder: (context, index) {
-                          return ListTile(
-                            title: Text(_placePredictions[index]['description']),
-                            onTap: () {
-                              String place = _placePredictions[index]['description'];
-                              _destinationController.text = place;
-                              setState(() => _placePredictions = []);
-                              _getDirections(place);
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                ],
-              ),
-            ),
+            Positioned(top: MediaQuery.of(context).padding.top + 10, left: 15, right: 15, child: Column(children: [ClipRRect(borderRadius: BorderRadius.circular(30), child: BackdropFilter(filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10), child: Container(color: Colors.white.withOpacity(0.7), child: TextField(controller: _destinationController, onChanged: (v) => _getAutocomplete(v), decoration: const InputDecoration(hintText: "Safety Search USM...", prefixIcon: Icon(Icons.search, color: Colors.blue), border: InputBorder.none, contentPadding: EdgeInsets.symmetric(vertical: 12)))))), if (_placePredictions.isNotEmpty) Container(margin: const EdgeInsets.only(top: 5), decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), borderRadius: BorderRadius.circular(20)), child: ListView.builder(padding: EdgeInsets.zero, shrinkWrap: true, itemCount: _placePredictions.length, itemBuilder: (context, index) { return ListTile(title: Text(_placePredictions[index]['description']), onTap: () { String place = _placePredictions[index]['description']; _destinationController.text = place; setState(() => _placePredictions = []); _getDirections(place); }); }))])),
 
-          // START JOURNEY BUTTON
-          if (_polylines.isNotEmpty && !_isJourneyStarted)
-            Positioned(
-              bottom: 135, left: 80, right: 80,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.green.withOpacity(0.85), shape: const StadiumBorder()),
-                onPressed: () {
-                  setState(() => _isJourneyStarted = true);
-                  _recenterCamera();
-                },
-                child: const Text("START WALK", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              ),
-            ),
+          // ROUTE PICKER
+          if (_fastestRoute != null && !_isJourneyStarted)
+            Positioned(top: MediaQuery.of(context).padding.top + 75, left: 20, right: 20, child: Row(children: [Expanded(child: _routeTab("Fastest", false)), const SizedBox(width: 10), Expanded(child: _routeTab("Safest", true))])),
 
-          // INFO CARD
+          // INFO PANEL
           if (_polylines.isNotEmpty)
-            Positioned(
-              bottom: 25, left: 20, right: 20,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                  child: Container(
-                    padding: const EdgeInsets.all(15),
-                    decoration: BoxDecoration(
-                      color: _isRouteSafe ? Colors.white.withOpacity(0.7) : Colors.red.shade100.withOpacity(0.75),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(_isRouteSafe ? Icons.verified : Icons.error_outline, color: _isRouteSafe ? Colors.green : Colors.red),
-                            const SizedBox(width: 8),
-                            Text(_isRouteSafe ? "Clear Path" : "Danger Ahead", style: const TextStyle(fontWeight: FontWeight.bold)),
-                            const Spacer(),
-                            if (_isJourneyStarted)
-                              GestureDetector(
-                                onTap: () => setState(() => _isJourneyStarted = false),
-                                child: const Icon(Icons.close, size: 18, color: Colors.grey),
-                              )
-                          ],
-                        ),
-                        const Divider(),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            Text(_walkingDuration, style: const TextStyle(fontWeight: FontWeight.bold)),
-                            Text(_walkingDistance, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
+            Positioned(bottom: 25, left: 20, right: 20, child: ClipRRect(borderRadius: BorderRadius.circular(20), child: BackdropFilter(filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12), child: Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: Colors.white.withOpacity(0.7), borderRadius: BorderRadius.circular(20)), child: Column(mainAxisSize: MainAxisSize.min, children: [if (!_isJourneyStarted) ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.green, shape: const StadiumBorder(), minimumSize: const Size(double.infinity, 45)), onPressed: () { setState(() => _isJourneyStarted = true); _recenterCamera(); }, child: const Text("START WALK", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))), if (_isJourneyStarted) Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text("Walking Active", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green)), IconButton(onPressed: () => setState(() => _isJourneyStarted = false), icon: const Icon(Icons.close))]), const Divider(), Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [_infoDisplay(_walkingDuration), _infoDisplay(_walkingDistance)])]))))),
 
-          // RECENTER BUTTON
-          Positioned(
-            right: 15,
-            bottom: _polylines.isNotEmpty ? 190 : 30,
-            child: FloatingActionButton.small(
-              backgroundColor: Colors.white.withOpacity(0.8),
-              onPressed: _recenterCamera,
-              child: const Icon(Icons.my_location, color: Colors.blue, size: 18),
-            ),
-          ),
+          // RECENTER
+          Positioned(right: 15, bottom: _polylines.isNotEmpty ? 190 : 30, child: FloatingActionButton.small(backgroundColor: Colors.white.withOpacity(0.8), onPressed: _recenterCamera, child: const Icon(Icons.my_location, color: Colors.blue, size: 18))),
         ],
       ),
     );
+  }
+
+  void _recenterCamera() {
+    if (_currentPosition != null && _mapController != null) {
+      _mapController!.animateCamera(CameraUpdate.newLatLngZoom(LatLng(_currentPosition!.latitude, _currentPosition!.longitude), 18));
+    }
+  }
+
+  Widget _routeTab(String label, bool isSafeBtn) {
+    bool active = _isShowingSafest == isSafeBtn;
+    bool isAvailable = isSafeBtn ? _safestRoute != null : true;
+    Color activeColor = !isSafeBtn && !_isPathSafe(_fastestPoints) ? Colors.red : Colors.green;
+    return GestureDetector(onTap: isAvailable ? () => _selectRoute(isSafeBtn) : null, child: Opacity(opacity: isAvailable ? 1.0 : 0.4, child: Container(padding: const EdgeInsets.symmetric(vertical: 10), decoration: BoxDecoration(color: active ? activeColor : Colors.white.withOpacity(0.8), borderRadius: BorderRadius.circular(20)), child: Center(child: Text(label, style: TextStyle(color: active ? Colors.white : activeColor, fontWeight: FontWeight.bold))))));
+  }
+
+  Widget _infoDisplay(String text) {
+    return Expanded(child: Text(text, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis));
+  }
+
+  Future<void> _getAutocomplete(String input) async {
+    setState(() { _placePredictions = []; _fastestRoute = null; _safestRoute = null; _polylines.clear(); _isJourneyStarted = false; });
+    if (input.isEmpty) return;
+    final url = Uri.parse('https://maps.googleapis.com/maps/api/place/autocomplete/json?input=$input&key=$googleMapsApiKey');
+    try {
+      final response = await http.get(url);
+      final data = json.decode(response.body);
+      if (data['status'] == 'OK') setState(() => _placePredictions = data['predictions']);
+    } catch (e) { debugPrint("Autocomplete error: $e"); }
   }
 }
