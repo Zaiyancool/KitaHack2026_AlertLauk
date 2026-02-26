@@ -69,7 +69,7 @@ class _AdminChatPageState extends State<AdminChatPage> {
 
       // Initialize Gemini model directly
       _model = GenerativeModel(
-        model: 'gemini-2.0-flash',
+        model: 'gemini-2.5-flash',
         apiKey: apiKey,
       );
 

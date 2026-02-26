@@ -45,3 +45,12 @@ android {
 flutter {
     source = "../.."
 }
+
+// Fix Firebase duplicate class issue
+configurations.all {
+    resolutionStrategy {
+        // Force consistent Firebase IID version
+        force("com.google.firebase:firebase-iid:21.1.0")
+        force("com.google.firebase:firebase-messaging:24.0.0")
+    }
+}

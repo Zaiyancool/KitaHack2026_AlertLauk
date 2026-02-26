@@ -24,6 +24,10 @@ import 'package:flutter_application_1/heatmap/heatmap_screen.dart';
 import 'sos_button/sos_button.dart';
 import 'chat_page.dart';
 import 'notification_service.dart';
+import 'ai_live_assistant/ai_live_assistant_screen.dart';
+import 'ai_live_assistant/live_triage_screen.dart';
+import 'ai_live_assistant/gemini_live_screen.dart';
+import 'ai_live_assistant/ai_live_assistant_realtime.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -209,49 +213,31 @@ Expanded(
     child: Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // SOS button
-
-         const SOSButton(),
-
-        const SizedBox(height: 30),
-
-        // Three-button row: Left, Report Incident, Right
+        // Buttons: AI Live (left of SOS), SOS, Chat
+        // Report Incident and Report List below
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Left placeholder button
+            // AI Live Assistant button (left of SOS) - Opens Gemini Live API
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                padding: const EdgeInsets.all(15), // adjust size
-                shape: const CircleBorder(), // makes it circular
+                backgroundColor: Colors.deepPurple,
+                padding: const EdgeInsets.all(15),
+                shape: const CircleBorder(),
               ),
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => ReportListScreen()),
+                  MaterialPageRoute(builder: (_) => const AILiveAssistantRealtime()),
                 );
               },
-              child: const Icon(Icons.article, color: Colors.deepPurple, size: 25),
+              child: const Icon(Icons.psychology, color: Colors.white, size: 25),
             ),
 
             const SizedBox(width: 20),
 
-            // Center Report Incident button
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-              ),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => ReportScreen()),
-                );
-              },
-              icon: const Icon(Icons.report),
-              label: const Text('Report Incident'),
-            ),
+            // SOS button (center)
+            const SOSButton(),
 
             const SizedBox(width: 20),
 
@@ -271,6 +257,42 @@ Expanded(
               child: const Icon(Icons.chat, color: Colors.blue, size: 25),
             )
           ],
+        ),
+
+        const SizedBox(height: 20),
+
+        // Report Incident button (below SOS)
+        ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+          ),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => ReportScreen()),
+            );
+          },
+          icon: const Icon(Icons.report),
+          label: const Text('Report Incident'),
+        ),
+
+        const SizedBox(height: 15),
+
+        // Report List button (below Report Incident)
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.white,
+            padding: const EdgeInsets.all(15),
+            shape: const CircleBorder(),
+          ),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => ReportListScreen()),
+            );
+          },
+          child: const Icon(Icons.article, color: Colors.deepPurple, size: 25),
         ),
       ],
     ),
