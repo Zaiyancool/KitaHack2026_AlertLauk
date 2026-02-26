@@ -1,0 +1,18 @@
+{
+  "name": "alertlauk-ai-proxy",
+  "version": "0.1.0",
+  "description": "Thin Cloud Function proxy to call Google AI Studio / Generative APIs",
+  "main": "index.js",
+  "engines": {
+    "node": "18"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "node-cache": "^5.1.2",
+    "axios": "^1.4.0"
+  }
+}

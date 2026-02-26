@@ -205,6 +205,7 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
                           anchor: const Offset(0.5, 0.5),
                         ));
 
+
                         if (snapshot.hasData) {
                           for (var doc in snapshot.data!.docs) {
                             final data = doc.data() as Map<String, dynamic>;
@@ -221,6 +222,7 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
                           myLocationButtonEnabled: false, 
                           onMapCreated: (controller) => _mapController = controller,
                           padding: const EdgeInsets.only(bottom: 120),
+
                         );
                       },
                     );

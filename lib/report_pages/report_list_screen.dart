@@ -41,6 +41,7 @@ class _ReportListScreenState extends State<ReportListScreen> {
               'timestamp': data['Time']?.toDate() ?? DateTime.now(),
               'status': data['Status'] ?? 'Pending',
               'location': data['Location'] ?? '',
+              'imageUrl': data['ImageURL'] ?? '',
             };
           }).toList();
 
@@ -70,7 +71,8 @@ class _ReportListScreenState extends State<ReportListScreen> {
                   time: DateFormat('HH:mm:ss').format(report['timestamp']),
                   status: report['status'],
                   location: report['location'],
-                  type: report['type'], 
+                  type: report['type'],
+                  imageUrl: report['imageUrl'],
                 );
               },
             ),
