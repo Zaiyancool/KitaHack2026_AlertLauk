@@ -3,7 +3,6 @@
 import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// Default [FirebaseOptions] for use with your Firebase apps.
 ///
@@ -49,34 +48,34 @@ class DefaultFirebaseOptions {
 
   static FirebaseOptions get android {
     return FirebaseOptions(
-      apiKey: dotenv.env['FIREBASE_ANDROID_API_KEY'] ?? 'AIzaSyCzMGuLO0bMuC5nMiWF1DQK_3hc1xePh5s',
-      appId: dotenv.env['FIREBASE_ANDROID_APP_ID'] ?? '1:568002325053:android:c5a5d0b6d733ed02b01854',
-      messagingSenderId: dotenv.env['FIREBASE_ANDROID_MESSAGING_SENDER_ID'] ?? '568002325053',
-      projectId: dotenv.env['FIREBASE_PROJECT_ID'] ?? 'gitlauk-e752f',
-      storageBucket: dotenv.env['FIREBASE_STORAGE_BUCKET'] ?? 'gitlauk-e752f.firebasestorage.app',
+      apiKey: const String.fromEnvironment('FIREBASE_ANDROID_API_KEY'),
+      appId: const String.fromEnvironment('FIREBASE_ANDROID_APP_ID'),
+      messagingSenderId: const String.fromEnvironment('FIREBASE_ANDROID_MESSAGING_SENDER_ID'),
+      projectId: const String.fromEnvironment('FIREBASE_PROJECT_ID'),
+      storageBucket: const String.fromEnvironment('FIREBASE_STORAGE_BUCKET'),
     );
   }
 
   static FirebaseOptions get ios {
     return FirebaseOptions(
-      apiKey: dotenv.env['FIREBASE_IOS_API_KEY'] ?? 'AIzaSyAfOpa7eAQRHVLRwb2TLdkcvutNA3EPqcI',
-      appId: dotenv.env['FIREBASE_IOS_APP_ID'] ?? '1:568002325053:ios:262d2fbb82561459b01854',
-      messagingSenderId: dotenv.env['FIREBASE_IOS_MESSAGING_SENDER_ID'] ?? '568002325053',
-      projectId: dotenv.env['FIREBASE_PROJECT_ID'] ?? 'gitlauk-e752f',
-      storageBucket: dotenv.env['FIREBASE_STORAGE_BUCKET'] ?? 'gitlauk-e752f.firebasestorage.app',
-      iosBundleId: dotenv.env['FIREBASE_IOS_BUNDLE_ID'] ?? 'com.example.flutterApplication1',
+      apiKey: const String.fromEnvironment('FIREBASE_IOS_API_KEY'),
+      appId: const String.fromEnvironment('FIREBASE_IOS_APP_ID'),
+      messagingSenderId: const String.fromEnvironment('FIREBASE_IOS_MESSAGING_SENDER_ID'),
+      projectId: const String.fromEnvironment('FIREBASE_PROJECT_ID'),
+      storageBucket: const String.fromEnvironment('FIREBASE_STORAGE_BUCKET'),
+      iosBundleId: const String.fromEnvironment('FIREBASE_IOS_BUNDLE_ID'),
     );
   }
 
   static FirebaseOptions get web {
     return FirebaseOptions(
-      apiKey: dotenv.env['FIREBASE_WEB_API_KEY'] ?? 'AIzaSyCOtOZmZU_8nhg7RF5C5LW7cq-dpOVr-P4',
-      authDomain: dotenv.env['FIREBASE_WEB_AUTH_DOMAIN'] ?? 'gitlauk-e752f.firebaseapp.com',
-      projectId: dotenv.env['FIREBASE_PROJECT_ID'] ?? 'gitlauk-e752f',
-      storageBucket: dotenv.env['FIREBASE_STORAGE_BUCKET'] ?? 'gitlauk-e752f.firebasestorage.app',
-      messagingSenderId: dotenv.env['FIREBASE_WEB_MESSAGING_SENDER_ID'] ?? '568002325053',
-      appId: dotenv.env['FIREBASE_WEB_APP_ID'] ?? '1:568002325053:web:d7c078cff8a6e507b01854',
-      measurementId: dotenv.env['FIREBASE_WEB_MEASUREMENT_ID'] ?? 'G-KVDNB8S399',
+      apiKey: const String.fromEnvironment('FIREBASE_WEB_API_KEY'),
+      authDomain: const String.fromEnvironment('FIREBASE_WEB_AUTH_DOMAIN'),
+      projectId: const String.fromEnvironment('FIREBASE_PROJECT_ID'),
+      storageBucket: const String.fromEnvironment('FIREBASE_STORAGE_BUCKET'),
+      messagingSenderId: const String.fromEnvironment('FIREBASE_WEB_MESSAGING_SENDER_ID'),
+      appId: const String.fromEnvironment('FIREBASE_WEB_APP_ID'),
+      measurementId: const String.fromEnvironment('FIREBASE_WEB_MEASUREMENT_ID'),
     );
   }
 }

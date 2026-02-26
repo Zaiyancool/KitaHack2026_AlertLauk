@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'admin_ai_service.dart';
 
@@ -48,15 +47,13 @@ class _AdminChatPageState extends State<AdminChatPage> {
 
   Future<void> _initializeAI() async {
     try {
-      if (!dotenv.isInitialized) await dotenv.load(fileName: '.env');
-
-      final apiKey = dotenv.env['GEMINI_API_KEY'];
-      if (apiKey == null || apiKey.isEmpty) {
+      final apiKey = const String.fromEnvironment('GEMINI_API_KEY');
+      if (apiKey.isEmpty) {
         setState(() {
-          _errorMessage = 'GEMINI_API_KEY not set in .env.';
+          _errorMessage = 'GEMINI_API_KEY not set in environment.';
           _messages.add({
             'from': 'bot',
-            'text': 'Error: AI service not configured. Please set GEMINI_API_KEY in .env.',
+            'text': 'Error: AI service not configured. Please set GEMINI_API_KEY in environment.',
             'timestamp': DateTime.now(),
           });
           _initialized = true;

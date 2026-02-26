@@ -6,7 +6,6 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
 class HeatmapScreen extends StatefulWidget {
@@ -35,7 +34,7 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
   String _walkingDistance = "";
   String _walkingDuration = "";
 
-  String get googleMapsApiKey => dotenv.env['GOOGLE_MAPS_API_KEY'] ?? "";
+  String get googleMapsApiKey => const String.fromEnvironment('GOOGLE_MAPS_API_KEY');
 
   @override
   void initState() {
