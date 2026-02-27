@@ -95,7 +95,7 @@ class _AILiveAssistantScreenState extends State<AILiveAssistantScreen>
         apiKey: apiKey,
         generationConfig: GenerationConfig(
           temperature: 0.7,
-          maxOutputTokens: 2048,
+          maxOutputTokens: 1024,
         ),
       );
 
@@ -229,8 +229,7 @@ class _AILiveAssistantScreenState extends State<AILiveAssistantScreen>
     try {
       final imagePart = DataPart('image/jpeg', frameBytes);
       final textPart = TextPart(
-        'You are in a live video call. Analyze what you see and provide safety advice. '
-        'What dangers do you see? What should the user do? Be quick and practical.',
+        'You are "Alert.AI". If everything looks safe, say so in 1 sentence. If there is danger, explain what you see and what to do in 2-3 sentences. Always finish your thought. No markdown.',
       );
       
       final content = [Content.multi([textPart, imagePart])];
@@ -348,7 +347,9 @@ class _AILiveAssistantScreenState extends State<AILiveAssistantScreen>
     });
 
     try {
-      final content = Content.text(text);
+      final content = Content.text(
+        'You are "Alert.AI", a campus safety assistant. Talk naturally like a real person.\nFor casual questions, reply in 1-2 sentences. For urgent/dangerous situations, give essential safety steps in 3-5 sentences. Always complete your thought. No bullet points or markdown.\n\nUser: $text',
+      );
       final response = await _model!.generateContentStream([content]);
       
       String fullResponse = '';

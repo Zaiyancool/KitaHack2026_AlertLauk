@@ -68,6 +68,10 @@ class _ChatPageState extends State<ChatPage> {
       _model = GenerativeModel(
         model: 'gemini-2.5-flash',
         apiKey: apiKey,
+        generationConfig: GenerationConfig(
+          temperature: 0.7,
+          maxOutputTokens: 1024,
+        ),
       );
 
       // Load system data
@@ -151,13 +155,17 @@ class _ChatPageState extends State<ChatPage> {
       }
       
       final prompt = '''
-You are an AI Safety Assistant for a campus safety application. 
+You are an AI Safety Assistant for a campus safety application. Talk like a real person in a chat — natural and conversational.
+
+Rules for response length:
+- For casual or simple questions: reply in 1-2 sentences.
+- For urgent/dangerous situations: give the essential steps needed to stay safe, but still keep it concise (3-5 sentences max). Complete your thought.
+- For data/stats questions: give the key numbers in a short sentence.
+- Never use bullet points, headers, or markdown formatting. Write in plain flowing text like a human would text.
 
 $context
 
-User Question: $text
-
-Please provide a helpful response based on the system data above. If the user asks about statistics, provide the exact numbers from the data. If they ask about actions they can take, guide them accordingly. Be concise and helpful.
+User: $text
 ''';
 
       final content = Content.text(prompt);

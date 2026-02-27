@@ -45,13 +45,20 @@ class _ReportListScreenState extends State<ReportListScreen> {
             };
           }).toList();
 
-          // Sort: SOS Pending first, then Pending, then Solved
+          // Sort: SOS Pending first, then normal Pending, then Solved — latest first within each group
           reports.sort((a, b) {
-            if (a['status'] == 'Pending' && a['type'].toString().toUpperCase() == 'SOS') return -1;
-            if (b['status'] == 'Pending' && b['type'].toString().toUpperCase() == 'SOS') return 1;
-            if (a['status'] == 'Pending' && b['status'] != 'Pending') return -1;
-            if (a['status'] != 'Pending' && b['status'] == 'Pending') return 1;
-            return 0;
+            int priorityOf(Map<String, dynamic> r) {
+              final isSolved = r['status'].toString().toLowerCase() == 'solved';
+              if (isSolved) return 2; // Solved always last
+              final isSOS = r['type'].toString().toUpperCase() == 'SOS';
+              return isSOS ? 0 : 1; // SOS Pending = 0, Normal Pending = 1
+            }
+
+            final pa = priorityOf(a);
+            final pb = priorityOf(b);
+            if (pa != pb) return pa.compareTo(pb);
+            // Within the same priority group, latest first
+            return (b['timestamp'] as DateTime).compareTo(a['timestamp'] as DateTime);
           });
 
           return RefreshIndicator(

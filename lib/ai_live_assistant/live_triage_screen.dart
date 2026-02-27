@@ -93,7 +93,7 @@ class _LiveTriageScreenState extends State<LiveTriageScreen> {
       apiKey: _apiKey!,
       generationConfig: GenerationConfig(
         temperature: 0.7,
-        maxOutputTokens: 2048,
+        maxOutputTokens: 1024,
       ),
     );
     
@@ -385,11 +385,12 @@ class _LiveTriageScreenState extends State<LiveTriageScreen> {
       
       String prompt;
       if (imageBytes != null) {
-        prompt = '''You are "Alert.AI", a friendly campus safety assistant. 
+        prompt = '''You are "Alert.AI", a friendly campus safety assistant. Talk naturally like a real person.
+For casual questions, reply in 1-2 sentences. For dangerous/urgent situations, give the essential safety steps but keep it concise (3-5 sentences max). Always complete your thought. No bullet points or markdown.
         
 User's question: "$question"
 
-Look at the image and answer their question about what you see. Be helpful and specific. Keep your response brief (2-3 sentences).''';
+Look at the image and respond based on what you see.''';
         
         final imagePart = DataPart('image/jpeg', imageBytes);
         final textPart = TextPart(prompt);
@@ -402,11 +403,12 @@ Look at the image and answer their question about what you see. Be helpful and s
           _statusMessage = 'Alert.AI is responding...';
         });
       } else {
-        prompt = '''You are "Alert.AI", a friendly campus safety assistant. 
+        prompt = '''You are "Alert.AI", a friendly campus safety assistant. Talk naturally like a real person.
+For casual questions, reply in 1-2 sentences. For dangerous/urgent situations, give the essential safety steps but keep it concise (3-5 sentences max). Always complete your thought. No bullet points or markdown.
         
 User's question: "$question"
 
-Provide a helpful response about campus safety. Keep it brief (2-3 sentences).''';
+Respond naturally and directly.''';
         
         final content = [Content.text(prompt)];
         final response = await _model!.generateContent(content);
@@ -584,16 +586,11 @@ Provide a helpful response about campus safety. Keep it brief (2-3 sentences).''
     
     try {
       // Create prompt for safety analysis
-      final prompt = '''You are "Alert.AI", a friendly campus safety assistant. Analyze this image and provide safety guidance.
+      final prompt = '''You are "Alert.AI", a friendly campus safety assistant. Analyze this image for safety.
 
-Look for:
-- Flood water or water accumulation
-- Heavy rain or storm conditions
-- Blocked paths or roads
-- Any dangerous situations
-- People in distress
+Check for flooding, storms, blocked paths, danger, or people in distress.
 
-Provide a brief, practical safety assessment in 2-3 sentences. Be specific about what you see and what the user should do.''';
+Give a practical safety assessment. If safe, say so in 1 sentence. If dangerous, explain what you see and what to do in 3-5 sentences. Talk naturally, no bullet points or markdown.''';
       
       // Send to Gemini
       final imagePart = DataPart('image/jpeg', imageBytes);
@@ -718,15 +715,8 @@ Provide a brief, practical safety assessment in 2-3 sentences. Be specific about
         return;
       }
       
-      final prompt = '''You are "Alert.AI", a safety monitoring assistant. 
-Analyze this image briefly and provide a quick safety status.
-
-Look for:
-- Flooding, water hazards
-- Dangerous situations
-- Safety concerns
-
-Respond with 1-2 sentences ONLY. Be urgent if there's danger.''';
+      final prompt = '''You are "Alert.AI", a safety monitoring assistant.
+If everything looks safe, say so in 1 sentence. If there is danger, explain the threat and what to do in 2-3 sentences. Always complete your thought. No markdown.''';
       
       final imagePart = DataPart('image/jpeg', imageBytes);
       final textPart = TextPart(prompt);

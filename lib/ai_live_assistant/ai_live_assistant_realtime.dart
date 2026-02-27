@@ -143,6 +143,10 @@ class _AILiveAssistantRealtimeState extends State<AILiveAssistantRealtime>
       _model = GenerativeModel(
         model: 'gemini-2.5-flash',
         apiKey: apiKey,
+        generationConfig: GenerationConfig(
+          temperature: 0.7,
+          maxOutputTokens: 1024,
+        ),
       );
       
       // Initialize Speech to Text
@@ -370,9 +374,7 @@ class _AILiveAssistantRealtimeState extends State<AILiveAssistantRealtime>
       // Send to Gemini for analysis
       final imagePart = DataPart('image/jpeg', jpegBytes);
       final textPart = TextPart(
-        'You are a campus safety assistant. Analyze this image and provide a brief safety assessment. '
-        'If you see any potential hazards or safety concerns, warn the user immediately. '
-        'Keep your response very short (1-2 sentences) for real-time feedback.'
+        'You are "Alert.AI". If everything looks safe, say so in 1 sentence. If there is danger, explain what you see and what to do in 2-3 sentences. Always finish your thought. No markdown.',
       );
 
       final content = [
@@ -437,7 +439,9 @@ class _AILiveAssistantRealtimeState extends State<AILiveAssistantRealtime>
         context = '$text\n\n[Camera shows: $_cameraAnalysis]';
       }
 
-      final content = Content.text(context);
+      final content = Content.text(
+        'You are "Alert.AI", a campus safety assistant. Talk naturally like a real person.\nFor casual questions, reply in 1-2 sentences. For urgent/dangerous situations, give essential safety steps in 3-5 sentences. Always complete your thought. No bullet points or markdown.\n\nUser: $context',
+      );
       final response = await _model!.generateContent([content]);
       
       final aiResponse = response.text ?? 'Sorry, I could not generate a response.';

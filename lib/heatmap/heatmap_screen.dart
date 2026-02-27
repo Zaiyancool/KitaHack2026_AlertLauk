@@ -8,6 +8,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 
 class HeatmapScreen extends StatefulWidget {
   @override
@@ -54,7 +55,7 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
     final Paint borderPaint = Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = 3.0;
     canvas.drawCircle(Offset(size / 2, size / 2), size / 2, borderPaint);
 
-    TextPainter textPainter = TextPainter(textDirection: TextDirection.ltr);
+    TextPainter textPainter = TextPainter(textDirection: ui.TextDirection.ltr);
     textPainter.text = TextSpan(
       text: String.fromCharCode(Icons.person_pin.codePoint),
       style: TextStyle(fontSize: size * 0.7, fontFamily: Icons.person_pin.fontFamily, color: Colors.white),
@@ -190,7 +191,7 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
                               strokeColor: Colors.red.withOpacity(0.4), 
                               strokeWidth: 2, 
                               consumeTapEvents: true, 
-                              onTap: () => _showIncidentDetails(data['Type'] ?? "Alert", data['Description'] ?? "")
+                              onTap: () => _showIncidentDetails(doc.id, data)
                             ));
                           }
                         }
@@ -268,7 +269,239 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
     } catch (e) { debugPrint("Autocomplete error: $e"); }
   }
 
-  void _showIncidentDetails(String type, String desc) {
-    showModalBottomSheet(context: context, backgroundColor: Colors.transparent, builder: (context) => Container(padding: const EdgeInsets.all(24), decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(25))), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [Text(type, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.red)), const SizedBox(height: 10), Text(desc.isEmpty ? "No description provided." : desc, style: const TextStyle(fontSize: 16)), const SizedBox(height: 20), SizedBox(width: double.infinity, child: ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text("Close")))])));
+  void _showIncidentDetails(String docId, Map<String, dynamic> data) {
+    final String type = data['Type'] ?? 'Alert';
+    final String details = data['Details'] ?? '';
+    final String location = data['Location'] ?? '';
+    final String status = data['Status'] ?? 'Pending';
+    final String? imageUrl = data['ImageURL'];
+    final Timestamp? timestamp = data['Time'];
+    final DateTime? dateTime = timestamp?.toDate();
+    final String date = dateTime != null ? DateFormat('dd MMM yyyy').format(dateTime) : 'Unknown';
+    final String time = dateTime != null ? DateFormat('hh:mm a').format(dateTime) : 'Unknown';
+    final String reportId = data['ID']?.toString() ?? docId;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: 0.85,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+          ),
+          child: ListView(
+            controller: scrollController,
+            padding: const EdgeInsets.all(20),
+            children: [
+              // Drag handle
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+
+              // Title row with status badge
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: type.toUpperCase() == 'SOS'
+                          ? Colors.red
+                          : Colors.orange,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      type.toUpperCase(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: status == 'Solved'
+                          ? Colors.green.withOpacity(0.15)
+                          : Colors.red.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      status,
+                      style: TextStyle(
+                        color: status == 'Solved' ? Colors.green : Colors.red,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    'Report #$reportId',
+                    style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Date & Time
+              Row(
+                children: [
+                  Icon(Icons.calendar_today, size: 16, color: Colors.grey[600]),
+                  const SizedBox(width: 6),
+                  Text(date, style: TextStyle(color: Colors.grey[700], fontSize: 14)),
+                  const SizedBox(width: 16),
+                  Icon(Icons.access_time, size: 16, color: Colors.grey[600]),
+                  const SizedBox(width: 6),
+                  Text(time, style: TextStyle(color: Colors.grey[700], fontSize: 14)),
+                ],
+              ),
+              const SizedBox(height: 10),
+
+              // Location
+              if (location.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.location_on, size: 16, color: Colors.grey[600]),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          location,
+                          style: TextStyle(color: Colors.grey[700], fontSize: 14),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              const Divider(),
+              const SizedBox(height: 8),
+
+              // Description
+              const Text(
+                'Description',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                details.isNotEmpty ? details : 'No description provided.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: details.isNotEmpty ? Colors.black87 : Colors.grey,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Photo
+              if (imageUrl != null && imageUrl.isNotEmpty) ...[
+                const Text(
+                  'Photo Evidence',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: GestureDetector(
+                    onTap: () => _showFullImage(context, imageUrl),
+                    child: Image.network(
+                      imageUrl,
+                      height: 200,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Container(
+                          height: 200,
+                          color: Colors.grey[200],
+                          child: const Center(child: CircularProgressIndicator()),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          height: 200,
+                          color: Colors.grey[200],
+                          child: const Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.broken_image, size: 40, color: Colors.grey),
+                                SizedBox(height: 8),
+                                Text('Failed to load image', style: TextStyle(color: Colors.grey)),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              // Close button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade50,
+                    foregroundColor: Colors.red,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Close', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showFullImage(BuildContext context, String imageUrl) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(10),
+        child: Stack(
+          alignment: Alignment.topRight,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: InteractiveViewer(
+                child: Image.network(imageUrl, fit: BoxFit.contain),
+              ),
+            ),
+            IconButton(
+              onPressed: () => Navigator.pop(context),
+              icon: const CircleAvatar(
+                backgroundColor: Colors.black54,
+                child: Icon(Icons.close, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

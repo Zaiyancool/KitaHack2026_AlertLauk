@@ -89,6 +89,9 @@ class _ReportScreenState extends State<ReportScreen> {
     // Initialize speech service
     _speechService = SpeechToTextService.getInstance();
     _speechService?.initialize();
+
+    // Auto-fetch location as soon as the report screen opens
+    _autoFillLocation();
   }
 
   @override
@@ -334,27 +337,7 @@ class _ReportScreenState extends State<ReportScreen> {
           ),
           
           // Show language indicator when listening
-          if (_isListening) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.language, size: 16, color: Colors.blue.shade700),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Language: Malay (ms_MY)',
-                    style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
-                  ),
-                ],
-              ),
-            ),
-          ],
+
           
           // Show speech text preview when listening
           if (_isListening && _speechText.isNotEmpty) ...[
@@ -470,23 +453,6 @@ class _ReportScreenState extends State<ReportScreen> {
       _isListening = true;
       _speechText = '';
     });
-
-    // Show listening feedback
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(
-            children: [
-              Icon(Icons.mic, color: Colors.white),
-              SizedBox(width: 8),
-              Text('Listening... Speak now (Bahasa Melayu)'),
-            ],
-          ),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
 
     // Use ms_MY (Malay Malaysia) for better local recognition of place names like "Taman Pinji Perdana"
     await _speechService!.startListening(

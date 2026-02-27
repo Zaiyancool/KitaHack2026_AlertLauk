@@ -72,7 +72,7 @@ class _GeminiLiveScreenState extends State<GeminiLiveScreen> {
         apiKey: _apiKey!,
         generationConfig: GenerationConfig(
           temperature: 0.7,
-          maxOutputTokens: 2048, // Increased for longer responses
+          maxOutputTokens: 1024,
         ),
       );
       
@@ -263,13 +263,12 @@ class _GeminiLiveScreenState extends State<GeminiLiveScreen> {
       
       if (imageBytes != null) {
         // User is showing something to the camera - analyze it!
-        final prompt = '''You are "Alert.AI", an AI that can see through the camera. 
+        final prompt = '''You are "Alert.AI", an AI that can see through the camera. Talk naturally like a real person.
+For casual questions, reply in 1-2 sentences. For urgent/dangerous situations, give the essential safety steps in 3-5 sentences. Always complete your thought. No bullet points or markdown.
         
 The user asked: "$input"
 
-Look carefully at the image and answer their question about what they are showing you. 
-Be specific and descriptive about what you see in the image.
-If you're not sure, say so honestly.''';
+Answer based on what you see. Be specific. If unsure, say so.''';
 
         final imagePart = DataPart('image/jpeg', imageBytes);
         final textPart = TextPart(prompt);
@@ -280,10 +279,9 @@ If you're not sure, say so honestly.''';
         text = response.text ?? 'I\'m looking at the image but couldn\'t find an answer.';
       } else {
         // No camera - just text conversation
-        final systemPrompt = '''You are "Alert.AI", a friendly AI safety assistant. 
-The user is asking: "$input"
-Provide a helpful response about campus safety or answer their question.
-Be specific and helpful.''';
+        final systemPrompt = '''You are "Alert.AI", a friendly AI safety assistant. Talk naturally like a real person.
+For casual questions, reply in 1-2 sentences. For urgent/dangerous situations, give essential safety steps in 3-5 sentences. Always finish your thought. No bullet points or markdown.
+The user is asking: "$input"''';
 
         final content = [Content.text(systemPrompt)];
         final response = await _model!.generateContent(content);
