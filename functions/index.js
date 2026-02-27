@@ -279,6 +279,54 @@ app.post('/vision-analyze', async (req, res) => {
   }
 });
 
+// ================== GOOGLE MAPS API PROXY (for Flutter Web CORS) ==================
+
+const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || 'AIzaSyDZoFA1X_wSHpSZbD94758aOVuENg8xMUI';
+
+// GET /maps/autocomplete?input=...
+app.get('/maps/autocomplete', async (req, res) => {
+  try {
+    const { input } = req.query;
+    if (!input) return res.status(400).json({ error: 'input required' });
+    const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&key=${GOOGLE_MAPS_API_KEY}`;
+    const response = await axios.get(url, { timeout: 10000 });
+    return res.json(response.data);
+  } catch (err) {
+    console.error('autocomplete proxy error:', err?.toString());
+    return res.status(500).json({ error: 'autocomplete_proxy_error', detail: err?.toString() });
+  }
+});
+
+// GET /maps/geocode?address=...
+app.get('/maps/geocode', async (req, res) => {
+  try {
+    const { address } = req.query;
+    if (!address) return res.status(400).json({ error: 'address required' });
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${GOOGLE_MAPS_API_KEY}`;
+    const response = await axios.get(url, { timeout: 10000 });
+    return res.json(response.data);
+  } catch (err) {
+    console.error('geocode proxy error:', err?.toString());
+    return res.status(500).json({ error: 'geocode_proxy_error', detail: err?.toString() });
+  }
+});
+
+// GET /maps/directions?origin=...&destination=...&mode=...&alternatives=...
+app.get('/maps/directions', async (req, res) => {
+  try {
+    const { origin, destination, mode, alternatives } = req.query;
+    if (!origin || !destination) return res.status(400).json({ error: 'origin and destination required' });
+    let url = `https://maps.googleapis.com/maps/api/directions/json?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&key=${GOOGLE_MAPS_API_KEY}`;
+    if (mode) url += `&mode=${encodeURIComponent(mode)}`;
+    if (alternatives) url += `&alternatives=${encodeURIComponent(alternatives)}`;
+    const response = await axios.get(url, { timeout: 15000 });
+    return res.json(response.data);
+  } catch (err) {
+    console.error('directions proxy error:', err?.toString());
+    return res.status(500).json({ error: 'directions_proxy_error', detail: err?.toString() });
+  }
+});
+
 const PORT = process.env.PORT || 8080;
 if (require.main === module) {
   app.listen(PORT, () => console.log(`Server listening on ${PORT}`));

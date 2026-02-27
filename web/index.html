@@ -17,22 +17,7 @@
   <title>flutter_application_1</title>
   <link rel="manifest" href="manifest.json">
 
-  <script src="config.js"></script>
-
-  <script>
-    (function() {
-      if (typeof GOOGLE_MAPS_API_KEY === 'undefined') {
-        console.error("Error: config.js not found or key missing. Check Step 1!");
-        return;
-      }
-      const script = document.createElement('script');
-      // This template uses the key from config.js and loads it async as Google requested
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&loading=async&callback=console.log`;
-      script.async = true;
-      script.defer = true;
-      document.head.appendChild(script);
-    })();
-  </script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDZoFA1X_wSHpSZbD94758aOVuENg8xMUI&libraries=places"></script>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>

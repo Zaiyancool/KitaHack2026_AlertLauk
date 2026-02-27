@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
@@ -35,7 +36,15 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
   String _walkingDistance = "";
   String _walkingDuration = "";
 
-  String get googleMapsApiKey => dotenv.env['GOOGLE_MAPS_API_KEY'] ?? "";
+  // Base URL for the proxy server (used on web to avoid CORS)
+  static const String _proxyBaseUrl = 'http://localhost:8080';
+
+  String get googleMapsApiKey {
+    // On mobile platforms, get from .env file; on web, use hardcoded key
+    final envKey = dotenv.env['GOOGLE_MAPS_API_KEY'];
+    if (envKey != null && envKey.isNotEmpty) return envKey;
+    return "AIzaSyDZoFA1X_wSHpSZbD94758aOVuENg8xMUI"; // Fallback for web
+  }
 
   @override
   void initState() {
@@ -114,13 +123,23 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
   Future<void> _getDirections(String destinationText) async {
     if (_currentPosition == null || googleMapsApiKey.isEmpty) return;
     try {
-      final geocodeUrl = Uri.parse('https://maps.googleapis.com/maps/api/geocode/json?address=${Uri.encodeComponent(destinationText)}&key=$googleMapsApiKey');
+      final Uri geocodeUrl;
+      if (kIsWeb) {
+        geocodeUrl = Uri.parse('$_proxyBaseUrl/maps/geocode?address=${Uri.encodeComponent(destinationText)}');
+      } else {
+        geocodeUrl = Uri.parse('https://maps.googleapis.com/maps/api/geocode/json?address=${Uri.encodeComponent(destinationText)}&key=$googleMapsApiKey');
+      }
       final geoResponse = await http.get(geocodeUrl);
       final geoData = json.decode(geoResponse.body);
       if (geoData['status'] != 'OK') return;
 
       LatLng destLatLng = LatLng(geoData['results'][0]['geometry']['location']['lat'], geoData['results'][0]['geometry']['location']['lng']);
-      final directionsUrl = Uri.parse('https://maps.googleapis.com/maps/api/directions/json?origin=${_currentPosition!.latitude},${_currentPosition!.longitude}&destination=${destLatLng.latitude},${destLatLng.longitude}&mode=walking&alternatives=true&key=$googleMapsApiKey');
+      final Uri directionsUrl;
+      if (kIsWeb) {
+        directionsUrl = Uri.parse('$_proxyBaseUrl/maps/directions?origin=${_currentPosition!.latitude},${_currentPosition!.longitude}&destination=${destLatLng.latitude},${destLatLng.longitude}&mode=walking&alternatives=true');
+      } else {
+        directionsUrl = Uri.parse('https://maps.googleapis.com/maps/api/directions/json?origin=${_currentPosition!.latitude},${_currentPosition!.longitude}&destination=${destLatLng.latitude},${destLatLng.longitude}&mode=walking&alternatives=true&key=$googleMapsApiKey');
+      }
       
       final dirResponse = await http.get(directionsUrl);
       final dirData = json.decode(dirResponse.body);
@@ -190,7 +209,13 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
                               strokeColor: Colors.red.withOpacity(0.4), 
                               strokeWidth: 2, 
                               consumeTapEvents: true, 
-                              onTap: () => _showIncidentDetails(data['Type'] ?? "Alert", data['Description'] ?? "")
+                              onTap: () => _showIncidentDetails(
+                                type: data['Type'] ?? "Alert",
+                                description: data['Details'] ?? "",
+                                imageUrl: data['ImageURL'] ?? "",
+                                time: data['Time'],
+                                location: data['Location'] ?? "",
+                              )
                             ));
                           }
                         }
@@ -221,7 +246,7 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
 
           // (UI Widgets: Search, Tabs, Info Panel - keep your existing ones)
           if (!_isJourneyStarted)
-            Positioned(top: MediaQuery.of(context).padding.top + 10, left: 15, right: 15, child: Column(children: [ClipRRect(borderRadius: BorderRadius.circular(30), child: BackdropFilter(filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10), child: Container(color: Colors.white.withOpacity(0.7), child: TextField(controller: _destinationController, onChanged: (v) => _getAutocomplete(v), decoration: const InputDecoration(hintText: "Safety Search USM...", prefixIcon: Icon(Icons.search, color: Colors.blue), border: InputBorder.none, contentPadding: EdgeInsets.symmetric(vertical: 12)))))), if (_placePredictions.isNotEmpty) Container(margin: const EdgeInsets.only(top: 5), decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), borderRadius: BorderRadius.circular(20)), child: ListView.builder(padding: EdgeInsets.zero, shrinkWrap: true, itemCount: _placePredictions.length, itemBuilder: (context, index) { return ListTile(title: Text(_placePredictions[index]['description']), onTap: () { String place = _placePredictions[index]['description']; _destinationController.text = place; setState(() => _placePredictions = []); _getDirections(place); }); }))])),
+            Positioned(top: MediaQuery.of(context).padding.top + 10, left: 15, right: 15, child: Column(children: [ClipRRect(borderRadius: BorderRadius.circular(30), child: BackdropFilter(filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10), child: Container(color: Colors.white.withOpacity(0.7), child: TextField(controller: _destinationController, onChanged: (v) => _getAutocomplete(v), decoration: const InputDecoration(hintText: "Safety Search", prefixIcon: Icon(Icons.search, color: Colors.blue), border: InputBorder.none, contentPadding: EdgeInsets.symmetric(vertical: 12)))))), if (_placePredictions.isNotEmpty) Container(margin: const EdgeInsets.only(top: 5), decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), borderRadius: BorderRadius.circular(20)), child: ListView.builder(padding: EdgeInsets.zero, shrinkWrap: true, itemCount: _placePredictions.length, itemBuilder: (context, index) { return ListTile(title: Text(_placePredictions[index]['description']), onTap: () { String place = _placePredictions[index]['description']; _destinationController.text = place; setState(() => _placePredictions = []); _getDirections(place); }); }))])),
 
           if (_fastestRoute != null && !_isJourneyStarted)
             Positioned(top: MediaQuery.of(context).padding.top + 75, left: 20, right: 20, child: Row(children: [Expanded(child: _routeTab("Fastest", false)), const SizedBox(width: 10), Expanded(child: _routeTab("Safest", true))])),
@@ -260,15 +285,127 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
   Future<void> _getAutocomplete(String input) async {
     setState(() { _placePredictions = []; _fastestRoute = null; _safestRoute = null; _polylines.clear(); _isJourneyStarted = false; });
     if (input.isEmpty) return;
-    final url = Uri.parse('https://maps.googleapis.com/maps/api/place/autocomplete/json?input=$input&key=$googleMapsApiKey');
     try {
+      final Uri url;
+      if (kIsWeb) {
+        // Use proxy to avoid CORS on web
+        url = Uri.parse('$_proxyBaseUrl/maps/autocomplete?input=${Uri.encodeComponent(input)}');
+      } else {
+        url = Uri.parse('https://maps.googleapis.com/maps/api/place/autocomplete/json?input=$input&key=$googleMapsApiKey');
+      }
       final response = await http.get(url);
       final data = json.decode(response.body);
       if (data['status'] == 'OK') setState(() => _placePredictions = data['predictions']);
     } catch (e) { debugPrint("Autocomplete error: $e"); }
   }
 
-  void _showIncidentDetails(String type, String desc) {
-    showModalBottomSheet(context: context, backgroundColor: Colors.transparent, builder: (context) => Container(padding: const EdgeInsets.all(24), decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(25))), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [Text(type, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.red)), const SizedBox(height: 10), Text(desc.isEmpty ? "No description provided." : desc, style: const TextStyle(fontSize: 16)), const SizedBox(height: 20), SizedBox(width: double.infinity, child: ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text("Close")))])));
+  void _showIncidentDetails({
+    required String type,
+    required String description,
+    String imageUrl = "",
+    Timestamp? time,
+    String location = "",
+  }) {
+    String formattedTime = "";
+    if (time != null) {
+      final dt = time.toDate();
+      formattedTime = "${dt.day}/${dt.month}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.7,
+        ),
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Text(type, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.red)),
+              const SizedBox(height: 12),
+              if (formattedTime.isNotEmpty) ...[
+                Row(
+                  children: [
+                    const Icon(Icons.access_time, size: 16, color: Colors.grey),
+                    const SizedBox(width: 6),
+                    Text(formattedTime, style: const TextStyle(fontSize: 14, color: Colors.grey)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
+              if (location.isNotEmpty) ...[
+                Row(
+                  children: [
+                    const Icon(Icons.location_on, size: 16, color: Colors.grey),
+                    const SizedBox(width: 6),
+                    Expanded(child: Text(location, style: const TextStyle(fontSize: 14, color: Colors.grey))),
+                  ],
+                ),
+                const SizedBox(height: 12),
+              ],
+              const Divider(),
+              const SizedBox(height: 8),
+              const Text("Description", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              Text(
+                description.isNotEmpty ? description : "No description provided.",
+                style: const TextStyle(fontSize: 15),
+              ),
+              if (imageUrl.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                const Text("Attached Image", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.network(
+                    imageUrl,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (context, child, progress) {
+                      if (progress == null) return child;
+                      return const SizedBox(
+                        height: 150,
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    },
+                    errorBuilder: (context, error, stack) => const SizedBox(
+                      height: 100,
+                      child: Center(child: Text("Failed to load image", style: TextStyle(color: Colors.grey))),
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Close"),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
